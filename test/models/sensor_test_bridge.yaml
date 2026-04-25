@@ -1,0 +1,46 @@
+# ros_gz_bridge configuration for sensor_test_robot.
+#
+# Usage (replace <namespace> with the value of the 'namespace' xacro:arg,
+# default is "sensor_test"):
+#
+#   ros2 run ros_gz_bridge parameter_bridge \
+#     --ros-args -p config_file:=<path>/sensor_test_bridge.yaml
+#
+# Or with launch:
+#   ros2 launch ros_gz_bridge ros_gz_bridge.launch.py \
+#     config_file:=<path>/sensor_test_bridge.yaml
+#
+# Verification:
+#   ros2 topic hz /sensor_test/imu/data_raw   # expect ~100 Hz
+#   ros2 topic hz /sensor_test/scan           # expect ~10 Hz
+#   ros2 topic hz /sensor_test/camera/image_raw  # expect ~30 Hz
+
+- ros_topic_name: "/sensor_test/imu/data_raw"
+  gz_topic_name:  "/sensor_test/imu/data_raw"
+  ros_type_name:  "sensor_msgs/msg/Imu"
+  gz_type_name:   "gz.msgs.IMU"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/sensor_test/scan"
+  gz_topic_name:  "/sensor_test/scan"
+  ros_type_name:  "sensor_msgs/msg/LaserScan"
+  gz_type_name:   "gz.msgs.LaserScan"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/sensor_test/camera/image_raw"
+  gz_topic_name:  "/sensor_test/camera/image_raw"
+  ros_type_name:  "sensor_msgs/msg/Image"
+  gz_type_name:   "gz.msgs.Image"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/sensor_test/camera/camera_info"
+  gz_topic_name:  "/sensor_test/camera/camera_info"
+  ros_type_name:  "sensor_msgs/msg/CameraInfo"
+  gz_type_name:   "gz.msgs.CameraInfo"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/tf"
+  gz_topic_name:  "/model/sensor_test_robot/pose"
+  ros_type_name:  "tf2_msgs/msg/TFMessage"
+  gz_type_name:   "gz.msgs.Pose_V"
+  direction: GZ_TO_ROS

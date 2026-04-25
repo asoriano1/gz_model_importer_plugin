@@ -1,43 +1,148 @@
 # Test models for robot_importer_gui
 
 Minimal robot descriptions used to exercise specific importer code paths.
-No external packages or mesh files are required — all geometry is primitive.
 
 ## Models
 
-| File | Format | Purpose |
+| File | Format | What it tests |
 |---|---|---|
-| `simple_box.urdf` | URDF | Basic URDF→SDF conversion, no xacro |
-| `xacro_with_defaults.urdf.xacro` | XACRO | All `<xacro:arg>` have defaults → must expand without user input |
-| `xacro_mixed_args.urdf.xacro` | XACRO | Mix: some args with defaults, `robot_id` without → importer passes `robot_id:=` (empty) |
-| `minimal_sdf.sdf` | SDF 1.9 | Direct SDF path; includes a plugin to test preflight stripping |
+| `simple_box.urdf` | URDF | Basic URDF→SDF conversion, no xacro, no URIs |
+| `xacro_with_defaults.urdf.xacro` | XACRO | All `<xacro:arg>` have defaults → expands without user input |
+| `xacro_mixed_args.urdf.xacro` | XACRO | One arg without default (`robot_id`) → importer passes `robot_id:=` (empty) |
+| `minimal_sdf.sdf` | SDF 1.9 | Direct SDF path; one plugin detected in preflight and stripped in preview |
+| `sensor_test_robot.urdf.xacro` | XACRO | IMU + LiDAR + Camera sensors; 3 plugins stripped in preview, active after import |
+| `mesh_uri_test.urdf.xacro` | XACRO | `package://robotnik_description/meshes/...` URI rewriting via ament_index |
 
-## What each model tests
+---
+
+## Detailed test guide
 
 ### simple_box.urdf
-- URDF parse and URDF→SDF conversion via `UrdfToSdf`
-- No URI rewriting needed
-- Preflight: 0 URIs, 0 Ogre materials, 0 plugins
+**Expected preflight:** `URIs: 0/0 resolved` — no URIs, no plugins.
+**Expected preview:** solid box + cylinder, no errors.
+
+---
 
 ### xacro_with_defaults.urdf.xacro
-- `XacroExpander::discoverArgs()` finds 4 args, all with defaults
-- `ImporterBackend::startFileLoad` builds effective arg list from file defaults
-- `xacro` is called with `robot_name:=test_robot prefix:= body_color:=0.2 0.6 0.2 1.0 body_mass:=10.0`
-- Model expands and previews without user interaction
+**Expected console:**
+```
+[robot_importer_gui] XACRO args discovered: 4, effective arg list:
+  [robot_name:=test_robot] [prefix:=] [body_color:=0.2 0.6 0.2 1.0] [body_mass:=10.0]
+```
+**Expected preflight:** no plugins, no unresolved URIs.
+**Expected preview:** differential-drive robot with 2 wheels and a mast.
+
+---
 
 ### xacro_mixed_args.urdf.xacro
-- `discoverArgs()` finds 3 args: `prefix` and `use_arm` have defaults, `robot_id` does not
-- Importer passes `robot_id:=` (empty string) — xacro accepts an empty value
-- Tests the no-default fallback path
-- `use_arm:=false` → arm link is excluded from the model (xacro:if block)
+**Expected console:**
+```
+[robot_importer_gui] XACRO args discovered: 3, effective arg list:
+  [prefix:=] [use_arm:=false] [robot_id:=]
+```
+**Expected preview:** flat chassis only (`use_arm:=false` disables the arm block).
+
+---
 
 ### minimal_sdf.sdf
-- Direct SDF load path (no URDF conversion)
-- `SdfPreflightChecker` detects the `gz-sim-diff-drive-system` plugin
-- `PreviewController::preparePreviewSdf()` strips it for preview
-- Sensor type is `lidar` (Gazebo Harmonic format, not the legacy `ray`)
+**Expected preflight:**
+```
+Plugins stripped for preview (1):
+  • gz-sim-diff-drive-system
+```
+**Expected preview:** chassis + lidar cylinder, no diff-drive.
+**Expected import:** model spawns with the diff-drive plugin active
+(requires diff-drive joints to exist in the world — joints are missing here
+by design; use for plugin-stripping tests only).
 
-## How to use
+---
 
-Open Gazebo Harmonic, load the importer plugin, and browse to each file.
-Check the preflight report panel and the Gazebo console for expected messages.
+### sensor_test_robot.urdf.xacro
+**Expected preflight:**
+```
+Plugins stripped for preview (3):
+  • gz-sim-imu-system
+  • gz-sim-sensors-system
+  • gz-sim-ros-node-system
+```
+**Expected preview:** chassis + small IMU box + lidar cylinder + red camera block.
+No sensor topics should be published during preview (plugins stripped).
+
+**After final import — start the bridge:**
+```bash
+ros2 run ros_gz_bridge parameter_bridge \
+  --ros-args -p config_file:=<path>/sensor_test_bridge.yaml
+```
+
+**Verify sensor topics:**
+```bash
+ros2 topic list | grep sensor_test
+# Expected:
+#   /sensor_test/camera/camera_info
+#   /sensor_test/camera/image_raw
+#   /sensor_test/imu/data_raw
+#   /sensor_test/scan
+
+ros2 topic hz /sensor_test/imu/data_raw    # ~100 Hz
+ros2 topic hz /sensor_test/scan            # ~10 Hz
+ros2 topic hz /sensor_test/camera/image_raw  # ~30 Hz
+```
+
+> **Note:** `gz-sim-imu-system` and `gz-sim-sensors-system` must be loaded as
+> **world plugins** in your Gazebo Harmonic world SDF for sensors to actually
+> publish. These plugins in the model URDF document the dependency and exercise
+> the preflight detector, but the world must also load them.
+
+---
+
+### mesh_uri_test.urdf.xacro
+Requires `robotnik_description` to be built and sourced.
+
+**Expected preflight:**
+```
+URIs: 4/4 resolved
+```
+(2 visual + 2 collision mesh URIs — all rewritten from `package://` to `file://`)
+
+**Expected preview:** rbsummit chassis mesh + rubber wheel mesh rendered in Gazebo.
+
+If `robotnik_description` is not in the ament index:
+```
+URIs: 0/4 resolved — 4 unresolved:
+  • package://robotnik_description/meshes/bases/rbsummit/rbsummit_xl_chassis_simple.stl
+  • ...
+```
+
+**Manual check:**
+```bash
+# Confirm the package is found:
+ros2 pkg prefix robotnik_description
+# Should print: /home/asoriano/workspaces/gazebo_importer/install/robotnik_description
+```
+
+---
+
+## Coverage map
+
+| Code path | Covered by |
+|---|---|
+| URDF→SDF conversion | simple_box, mesh_uri_test |
+| XACRO expansion, all-defaults | xacro_with_defaults |
+| XACRO expansion, empty fallback | xacro_mixed_args |
+| Direct SDF load | minimal_sdf |
+| `package://` URI rewriting | mesh_uri_test |
+| Mesh file existence check | mesh_uri_test |
+| Plugin preflight detection | minimal_sdf, sensor_test_robot |
+| Plugin stripping in preview | minimal_sdf, sensor_test_robot |
+| Sensor definitions (IMU/LiDAR/Camera) | sensor_test_robot |
+| Sensor topic bridging | sensor_test_robot + sensor_test_bridge.yaml |
+| Ogre2 material fix | mesh_uri_test (via robotnik_description STL meshes) |
+
+## What is NOT covered yet
+
+- **Full robotnik robot** (rbvogui, rb1): real multi-file XACRO include tree,
+  many meshes, ros2_control. Test manually by opening a robot XACRO directly.
+- **Multi-instance spawn**: spawn the same model twice with different names/namespaces.
+  Test manually: import twice, change name/namespace field between imports.
+- **TF frame verification**: `ros2 topic echo /tf` after import to confirm
+  frame names match the instance prefix.

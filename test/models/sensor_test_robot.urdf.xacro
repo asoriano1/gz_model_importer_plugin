@@ -1,0 +1,238 @@
+<?xml version="1.0"?>
+<!-- Test model: XACRO with IMU + LiDAR + Camera sensors.
+     Exercises:
+       - xacro:arg discovery (prefix, namespace with defaults)
+       - sensor definitions inside <gazebo reference> blocks (survives URDF→SDF)
+       - three model-level plugins detected by preflight and stripped in preview
+       - gz_frame_id / topic configuration for ros_gz_bridge
+
+     After final import, start the bridge with:
+       ros2 launch ros_gz_bridge ros_gz_bridge.launch.py \
+         bridge_name:=sensor_test_bridge \
+         config_file:=$(find robot_importer_gui)/test/models/sensor_test_bridge.yaml
+
+     Then verify:
+       ros2 topic hz /<namespace>/imu/data    # ~100 Hz
+       ros2 topic hz /<namespace>/scan        # ~10 Hz
+       ros2 topic hz /<namespace>/image_raw   # ~30 Hz
+-->
+<robot name="sensor_test_robot" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:arg name="prefix"    default=""/>
+  <xacro:arg name="namespace" default="sensor_test"/>
+
+  <xacro:property name="prefix_p"    value="$(arg prefix)"/>
+  <xacro:property name="ns_p"        value="$(arg namespace)"/>
+
+  <!-- ============================================================
+       BASE CHASSIS
+  ============================================================ -->
+  <link name="${prefix_p}base_link">
+    <visual>
+      <geometry><box size="0.6 0.4 0.15"/></geometry>
+      <material name="chassis_mat">
+        <color rgba="0.3 0.3 0.3 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry><box size="0.6 0.4 0.15"/></geometry>
+    </collision>
+    <inertial>
+      <mass value="15.0"/>
+      <inertia ixx="0.3" ixy="0.0" ixz="0.0"
+               iyy="0.5" iyz="0.0" izz="0.6"/>
+    </inertial>
+  </link>
+
+  <!-- ============================================================
+       IMU LINK
+  ============================================================ -->
+  <link name="${prefix_p}imu_link">
+    <visual>
+      <geometry><box size="0.025 0.025 0.01"/></geometry>
+      <material name="imu_mat">
+        <color rgba="0.0 0.5 1.0 1.0"/>
+      </material>
+    </visual>
+    <inertial>
+      <mass value="0.01"/>
+      <inertia ixx="0.0000005" ixy="0.0" ixz="0.0"
+               iyy="0.0000005" iyz="0.0" izz="0.0000005"/>
+    </inertial>
+  </link>
+
+  <joint name="${prefix_p}imu_joint" type="fixed">
+    <parent link="${prefix_p}base_link"/>
+    <child  link="${prefix_p}imu_link"/>
+    <origin xyz="0 0 0.075"/>
+  </joint>
+
+  <!-- IMU sensor (Gazebo Harmonic type="imu").
+       topic: gz → /<ns>/imu/data_raw
+       bridged to ROS2 sensor_msgs/Imu via ros_gz_bridge. -->
+  <gazebo reference="${prefix_p}imu_link">
+    <sensor name="${prefix_p}imu_sensor" type="imu">
+      <always_on>1</always_on>
+      <update_rate>100</update_rate>
+      <imu>
+        <angular_velocity>
+          <x><noise type="gaussian"><mean>0</mean><stddev>0.009</stddev></noise></x>
+          <y><noise type="gaussian"><mean>0</mean><stddev>0.009</stddev></noise></y>
+          <z><noise type="gaussian"><mean>0</mean><stddev>0.009</stddev></noise></z>
+        </angular_velocity>
+        <linear_acceleration>
+          <x><noise type="gaussian"><mean>0</mean><stddev>0.1</stddev></noise></x>
+          <y><noise type="gaussian"><mean>0</mean><stddev>0.1</stddev></noise></y>
+          <z><noise type="gaussian"><mean>0</mean><stddev>0.1</stddev></noise></z>
+        </linear_acceleration>
+      </imu>
+      <topic>${ns_p}/imu/data_raw</topic>
+      <gz_frame_id>${prefix_p}imu_link</gz_frame_id>
+    </sensor>
+  </gazebo>
+
+  <!-- ============================================================
+       LIDAR LINK
+  ============================================================ -->
+  <link name="${prefix_p}laser_link">
+    <visual>
+      <geometry><cylinder radius="0.04" length="0.07"/></geometry>
+      <material name="laser_mat">
+        <color rgba="0.1 0.1 0.1 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry><cylinder radius="0.04" length="0.07"/></geometry>
+    </collision>
+    <inertial>
+      <mass value="0.18"/>
+      <inertia ixx="0.0002" ixy="0.0" ixz="0.0"
+               iyy="0.0002" iyz="0.0" izz="0.0001"/>
+    </inertial>
+  </link>
+
+  <joint name="${prefix_p}laser_joint" type="fixed">
+    <parent link="${prefix_p}base_link"/>
+    <child  link="${prefix_p}laser_link"/>
+    <origin xyz="0.2 0 0.11"/>
+  </joint>
+
+  <!-- LiDAR sensor (Gazebo Harmonic type="lidar", not deprecated "ray").
+       360° horizontal scan, 30 m range.
+       topic: gz → /<ns>/scan  -->
+  <gazebo reference="${prefix_p}laser_link">
+    <sensor name="${prefix_p}lidar" type="lidar">
+      <always_on>1</always_on>
+      <update_rate>10</update_rate>
+      <lidar>
+        <scan>
+          <horizontal>
+            <samples>360</samples>
+            <resolution>1</resolution>
+            <min_angle>-3.14159265</min_angle>
+            <max_angle>3.14159265</max_angle>
+          </horizontal>
+        </scan>
+        <range>
+          <min>0.08</min>
+          <max>30.0</max>
+          <resolution>0.01</resolution>
+        </range>
+        <noise type="gaussian">
+          <mean>0.0</mean>
+          <stddev>0.01</stddev>
+        </noise>
+      </lidar>
+      <topic>${ns_p}/scan</topic>
+      <gz_frame_id>${prefix_p}laser_link</gz_frame_id>
+    </sensor>
+  </gazebo>
+
+  <!-- ============================================================
+       CAMERA LINK
+  ============================================================ -->
+  <link name="${prefix_p}camera_link">
+    <visual>
+      <geometry><box size="0.04 0.1 0.04"/></geometry>
+      <material name="camera_mat">
+        <color rgba="0.8 0.2 0.2 1.0"/>
+      </material>
+    </visual>
+    <inertial>
+      <mass value="0.1"/>
+      <inertia ixx="0.00005" ixy="0.0" ixz="0.0"
+               iyy="0.00005" iyz="0.0" izz="0.00005"/>
+    </inertial>
+  </link>
+
+  <joint name="${prefix_p}camera_joint" type="fixed">
+    <parent link="${prefix_p}base_link"/>
+    <child  link="${prefix_p}camera_link"/>
+    <origin xyz="0.3 0 0.08"/>
+  </joint>
+
+  <!-- Optical frame (ROS convention: Z forward → rotated from URDF default) -->
+  <link name="${prefix_p}camera_optical_frame"/>
+  <joint name="${prefix_p}camera_optical_joint" type="fixed">
+    <parent link="${prefix_p}camera_link"/>
+    <child  link="${prefix_p}camera_optical_frame"/>
+    <origin rpy="-1.5708 0 -1.5708"/>
+  </joint>
+
+  <!-- Camera sensor (RGB, 640×480, 30 Hz) -->
+  <gazebo reference="${prefix_p}camera_link">
+    <sensor name="${prefix_p}camera" type="camera">
+      <always_on>1</always_on>
+      <update_rate>30</update_rate>
+      <camera>
+        <horizontal_fov>1.3962634</horizontal_fov>
+        <image>
+          <width>640</width>
+          <height>480</height>
+          <format>R8G8B8</format>
+        </image>
+        <clip>
+          <near>0.02</near>
+          <far>300</far>
+        </clip>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.007</stddev>
+        </noise>
+      </camera>
+      <topic>${ns_p}/camera/image_raw</topic>
+      <gz_frame_id>${prefix_p}camera_optical_frame</gz_frame_id>
+    </sensor>
+  </gazebo>
+
+  <!-- ============================================================
+       MODEL-LEVEL PLUGINS
+       These are detected by SdfPreflightChecker and stripped by
+       PreviewController::preparePreviewSdf() during preview.
+       They become active only after final import.
+  ============================================================ -->
+  <gazebo>
+    <!-- IMU system: must be loaded as world plugin in Gazebo Harmonic.
+         Including here as a model plugin documents the dependency and
+         exercises the preflight plugin detector. -->
+    <plugin filename="gz-sim-imu-system"
+            name="gz::sim::systems::Imu"/>
+
+    <!-- Sensors system: required for camera rendering. World plugin. -->
+    <plugin filename="gz-sim-sensors-system"
+            name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <!-- ROS2 bridge: publishes gz sensor topics to ROS2.
+         Configure topics in sensor_test_bridge.yaml. -->
+    <plugin filename="gz-sim-ros-node-system"
+            name="gz::sim::systems::RosNode">
+      <ros>
+        <namespace>${ns_p}</namespace>
+      </ros>
+    </plugin>
+  </gazebo>
+
+</robot>

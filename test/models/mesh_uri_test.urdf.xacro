@@ -1,0 +1,85 @@
+<?xml version="1.0"?>
+<!-- Test model: URI resolution for package:// mesh references.
+     Exercises SdfUriRewriter: package://robotnik_description/meshes/...
+     must resolve to a valid file:// path via ament_index.
+
+     What the importer must do:
+       1. Detect package:// URI
+       2. Call ament_index_cpp::get_package_share_directory("robotnik_description")
+       3. Rewrite to file:///opt/ros/jazzy/share/robotnik_description/meshes/...
+          (or workspace install path if built locally)
+       4. Preflight: confirm 2/2 URIs resolved, 0 unresolved
+
+     Expected preflight report:
+       URIs: 2/2 resolved
+       (no unresolved entries)
+
+     If robotnik_description is NOT installed/sourced:
+       URIs: 0/2 resolved
+       • package://robotnik_description/meshes/...  (unresolved)
+-->
+<robot name="mesh_uri_test" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:arg name="prefix" default=""/>
+  <xacro:property name="prefix_p" value="$(arg prefix)"/>
+
+  <link name="${prefix_p}base_link">
+    <!-- Visual uses a real STL mesh from robotnik_description.
+         URI rewriter must resolve this to a file:// path. -->
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://robotnik_description/meshes/bases/rbsummit/rbsummit_xl_chassis_simple.stl"
+              scale="1 1 1"/>
+      </geometry>
+      <material name="chassis">
+        <color rgba="0.15 0.15 0.15 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <!-- Same mesh for collision — tests that the rewriter handles both
+           visual and collision URI elements. -->
+      <geometry>
+        <mesh filename="package://robotnik_description/meshes/bases/rbsummit/rbsummit_xl_chassis_simple.stl"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="50.0"/>
+      <inertia ixx="2.0" ixy="0.0" ixz="0.0"
+               iyy="3.0" iyz="0.0" izz="4.0"/>
+    </inertial>
+  </link>
+
+  <!-- Wheel with a different mesh (rubber_wheel). Tests cross-package
+       resolution — both links use the same package, so modelsRoot deduction
+       should work from the first resolved path. -->
+  <link name="${prefix_p}wheel_link">
+    <visual>
+      <origin rpy="1.5708 0 0"/>
+      <geometry>
+        <mesh filename="package://robotnik_description/meshes/wheels/rubber_wheel/rubber_wheel_350.stl"
+              scale="1 1 1"/>
+      </geometry>
+      <material name="wheel_mat">
+        <color rgba="0.05 0.05 0.05 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <cylinder radius="0.175" length="0.1"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="5.0"/>
+      <inertia ixx="0.05" ixy="0.0" ixz="0.0"
+               iyy="0.05" iyz="0.0" izz="0.09"/>
+    </inertial>
+  </link>
+
+  <joint name="${prefix_p}wheel_joint" type="fixed">
+    <parent link="${prefix_p}base_link"/>
+    <child  link="${prefix_p}wheel_link"/>
+    <origin xyz="-0.2 0.3 0"/>
+  </joint>
+
+</robot>
