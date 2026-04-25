@@ -1,0 +1,10 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+  <qresource prefix="/RobotImporterGui">
+    <file alias="RobotImporterGui.qml">gui/RobotImporterGui.qml</file>
+    <file alias="ImporterStatusBar.qml">gui/ImporterStatusBar.qml</file>
+    <file alias="FileSelectionPanel.qml">gui/FileSelectionPanel.qml</file>
+    <file alias="ImportOptionsPanel.qml">gui/ImportOptionsPanel.qml</file>
+    <file alias="PreviewBar.qml">gui/PreviewBar.qml</file>
+  </qresource>
+</RCC>
