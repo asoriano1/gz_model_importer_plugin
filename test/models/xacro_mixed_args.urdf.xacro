@@ -1,0 +1,72 @@
+<?xml version="1.0"?>
+<!-- Test model: XACRO with a mix of args — some with defaults, one without.
+     Exercises the fallback: the required arg (robot_id) has no default so
+     XacroExpander::discoverArgs() maps it to "" and the importer passes
+     robot_id:= on the xacro command line, which is a valid (empty) value.
+     xacro does NOT abort on an empty value; it only aborts if the arg is
+     completely absent from the command line and has no default. -->
+<robot name="robot_${robot_id}" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- Has default → importer uses it automatically. -->
+  <xacro:arg name="prefix"    default=""/>
+  <xacro:arg name="use_arm"   default="false"/>
+
+  <!-- No default → importer passes robot_id:="" (empty string fallback). -->
+  <xacro:arg name="robot_id"  default=""/>
+
+  <xacro:property name="prefix_p"   value="$(arg prefix)"/>
+  <xacro:property name="robot_id_p" value="$(arg robot_id)"/>
+  <xacro:property name="use_arm_p"  value="$(arg use_arm)"/>
+
+  <link name="${prefix_p}base_link">
+    <visual>
+      <geometry>
+        <box size="0.8 0.6 0.2"/>
+      </geometry>
+      <material name="chassis">
+        <color rgba="0.9 0.6 0.1 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="0.8 0.6 0.2"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="20.0"/>
+      <inertia ixx="0.4" ixy="0.0" ixz="0.0"
+               iyy="0.6" iyz="0.0" izz="0.8"/>
+    </inertial>
+  </link>
+
+  <xacro:if value="${use_arm_p == 'true'}">
+    <link name="${prefix_p}arm_base">
+      <visual>
+        <origin xyz="0 0 0.15"/>
+        <geometry>
+          <box size="0.1 0.1 0.3"/>
+        </geometry>
+        <material name="arm_mat">
+          <color rgba="0.3 0.3 0.8 1.0"/>
+        </material>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0.15"/>
+        <geometry>
+          <box size="0.1 0.1 0.3"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass value="2.0"/>
+        <inertia ixx="0.02" ixy="0.0" ixz="0.0"
+                 iyy="0.02" iyz="0.0" izz="0.002"/>
+      </inertial>
+    </link>
+    <joint name="${prefix_p}arm_joint" type="fixed">
+      <parent link="${prefix_p}base_link"/>
+      <child link="${prefix_p}arm_base"/>
+      <origin xyz="0.3 0 0.1"/>
+    </joint>
+  </xacro:if>
+
+</robot>

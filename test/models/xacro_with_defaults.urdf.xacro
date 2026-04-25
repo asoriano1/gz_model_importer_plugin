@@ -1,0 +1,105 @@
+<?xml version="1.0"?>
+<!-- Test model: XACRO with <xacro:arg> elements that all have defaults.
+     This file should expand without the user supplying any arguments.
+     It exercises XacroExpander::discoverArgs() + auto-arg injection. -->
+<robot name="${robot_name}" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- All args carry defaults → importer must expand without user input. -->
+  <xacro:arg name="robot_name"   default="test_robot"/>
+  <xacro:arg name="prefix"       default=""/>
+  <xacro:arg name="body_color"   default="0.2 0.6 0.2 1.0"/>
+  <xacro:arg name="body_mass"    default="10.0"/>
+
+  <xacro:property name="robot_name_p"  value="$(arg robot_name)"/>
+  <xacro:property name="prefix_p"      value="$(arg prefix)"/>
+  <xacro:property name="body_color_p"  value="$(arg body_color)"/>
+  <xacro:property name="body_mass_p"   value="$(arg body_mass)"/>
+
+  <!-- Base link -->
+  <link name="${prefix_p}base_link">
+    <visual>
+      <geometry>
+        <box size="0.6 0.4 0.15"/>
+      </geometry>
+      <material name="body_mat">
+        <color rgba="${body_color_p}"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="0.6 0.4 0.15"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="${body_mass_p}"/>
+      <inertia ixx="0.1" ixy="0.0" ixz="0.0"
+               iyy="0.2" iyz="0.0" izz="0.25"/>
+    </inertial>
+  </link>
+
+  <!-- Sensor mast -->
+  <link name="${prefix_p}mast_link">
+    <visual>
+      <origin xyz="0 0 0.2"/>
+      <geometry>
+        <cylinder radius="0.03" length="0.4"/>
+      </geometry>
+      <material name="mast_mat">
+        <color rgba="0.7 0.7 0.7 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.2"/>
+      <geometry>
+        <cylinder radius="0.03" length="0.4"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.3"/>
+      <inertia ixx="0.005" ixy="0.0" ixz="0.0"
+               iyy="0.005" iyz="0.0" izz="0.0002"/>
+    </inertial>
+  </link>
+
+  <joint name="${prefix_p}base_to_mast" type="fixed">
+    <parent link="${prefix_p}base_link"/>
+    <child link="${prefix_p}mast_link"/>
+    <origin xyz="0.1 0 0.075"/>
+  </joint>
+
+  <!-- Left wheel -->
+  <xacro:macro name="wheel" params="side reflect">
+    <link name="${prefix_p}${side}_wheel">
+      <visual>
+        <origin rpy="1.5708 0 0"/>
+        <geometry>
+          <cylinder radius="0.1" length="0.05"/>
+        </geometry>
+        <material name="wheel_mat">
+          <color rgba="0.1 0.1 0.1 1.0"/>
+        </material>
+      </visual>
+      <collision>
+        <origin rpy="1.5708 0 0"/>
+        <geometry>
+          <cylinder radius="0.1" length="0.05"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass value="1.0"/>
+        <inertia ixx="0.005" ixy="0.0" ixz="0.0"
+                 iyy="0.005" iyz="0.0" izz="0.009"/>
+      </inertial>
+    </link>
+    <joint name="${prefix_p}${side}_wheel_joint" type="continuous">
+      <parent link="${prefix_p}base_link"/>
+      <child link="${prefix_p}${side}_wheel"/>
+      <axis xyz="0 1 0"/>
+      <origin xyz="-0.1 ${reflect * 0.22} -0.075"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:wheel side="left"  reflect="1"/>
+  <xacro:wheel side="right" reflect="-1"/>
+
+</robot>
