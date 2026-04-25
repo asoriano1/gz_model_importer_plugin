@@ -277,19 +277,55 @@ void RobotImporterGui::onRender()
 
         if (needSelection)
         {
-          const gz::sim::Entity id =
-              static_cast<gz::sim::Entity>(visual->Id());
-          // sendEvent() must run on the main thread; marshal via invokeMethod.
-          QMetaObject::invokeMethod(gz::gui::App(), [id]()
+          // visual->Id() returns the rendering-assigned ID; VisualById uses
+          // the scene's registered ID (set at CreateVisual time). Confirm they
+          // match — if VisualById returns null the scene broadcaster registered
+          // the visual under a different key and SelectEntities won't find it.
+          const unsigned int rawId = visual->Id();
+          const auto crossCheck = scene->VisualById(rawId);
+          if (!crossCheck)
           {
-            gz::sim::gui::events::DeselectAllEntities deselectEv(false);
-            gz::sim::gui::events::EntitiesSelected    selectEv({id}, true);
-            QCoreApplication::sendEvent(gz::gui::App(), &deselectEv);
-            QCoreApplication::sendEvent(gz::gui::App(), &selectEv);
-          }, Qt::QueuedConnection);
+            // ID mismatch: iterate the scene to find the registered ID.
+            unsigned int resolvedId = rawId;
+            for (unsigned int vi = 0; vi < scene->VisualCount(); ++vi)
+            {
+              auto v = scene->VisualByIndex(vi);
+              if (v && v->Name() == entityName)
+              {
+                // The registered ID is the one used as the map key —
+                // derive it by checking VisualById for the current index.
+                // Since VisualByIndex gives us the correct object, iterate
+                // IDs nearby as a last resort — but prefer Name match.
+                resolvedId = v->Id();
+                break;
+              }
+            }
+            gzmsg << "[robot_importer_gui] VisualById(" << rawId
+                  << ") miss — using resolvedId=" << resolvedId
+                  << " for '" << entityName << "'.\n";
+            const gz::sim::Entity id = static_cast<gz::sim::Entity>(resolvedId);
+            QMetaObject::invokeMethod(gz::gui::App(), [id]()
+            {
+              gz::sim::gui::events::DeselectAllEntities deselectEv(false);
+              gz::sim::gui::events::EntitiesSelected    selectEv({id}, true);
+              QCoreApplication::sendEvent(gz::gui::App(), &deselectEv);
+              QCoreApplication::sendEvent(gz::gui::App(), &selectEv);
+            }, Qt::QueuedConnection);
+          }
+          else
+          {
+            const gz::sim::Entity id = static_cast<gz::sim::Entity>(rawId);
+            QMetaObject::invokeMethod(gz::gui::App(), [id]()
+            {
+              gz::sim::gui::events::DeselectAllEntities deselectEv(false);
+              gz::sim::gui::events::EntitiesSelected    selectEv({id}, true);
+              QCoreApplication::sendEvent(gz::gui::App(), &deselectEv);
+              QCoreApplication::sendEvent(gz::gui::App(), &selectEv);
+            }, Qt::QueuedConnection);
+          }
           selectionPending_.store(false, std::memory_order_release);
           gzmsg << "[robot_importer_gui] Selection queued for entity "
-                << id << " ('" << entityName << "').\n";
+                << rawId << " ('" << entityName << "').\n";
         }
       }
       // else: visual not in scene yet — keep flags true, retry next frame
