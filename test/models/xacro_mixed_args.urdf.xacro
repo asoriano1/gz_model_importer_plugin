@@ -5,7 +5,7 @@
      robot_id:= on the xacro command line, which is a valid (empty) value.
      xacro does NOT abort on an empty value; it only aborts if the arg is
      completely absent from the command line and has no default. -->
-<robot name="robot_${robot_id}" xmlns:xacro="http://www.ros.org/wiki/xacro">
+<robot name="xacro_mixed_args" xmlns:xacro="http://www.ros.org/wiki/xacro">
 
   <!-- Has default → importer uses it automatically. -->
   <xacro:arg name="prefix"    default=""/>

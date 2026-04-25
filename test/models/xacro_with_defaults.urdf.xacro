@@ -2,7 +2,7 @@
 <!-- Test model: XACRO with <xacro:arg> elements that all have defaults.
      This file should expand without the user supplying any arguments.
      It exercises XacroExpander::discoverArgs() + auto-arg injection. -->
-<robot name="${robot_name}" xmlns:xacro="http://www.ros.org/wiki/xacro">
+<robot name="xacro_with_defaults" xmlns:xacro="http://www.ros.org/wiki/xacro">
 
   <!-- All args carry defaults → importer must expand without user input. -->
   <xacro:arg name="robot_name"   default="test_robot"/>
