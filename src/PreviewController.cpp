@@ -46,6 +46,7 @@ PreviewController::~PreviewController() = default;
 
 bool    PreviewController::isPreviewing()      const { return previewing_; }
 QString PreviewController::previewEntityName() const { return previewEntityName_; }
+QString PreviewController::worldName()         const { return worldName_; }
 
 // ============================================================
 // spawnPreview

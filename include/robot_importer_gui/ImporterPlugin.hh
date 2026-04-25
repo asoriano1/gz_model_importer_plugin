@@ -78,7 +78,8 @@ class RobotImporterGui : public gz::gui::Plugin
 
   // Protected by renderMutex_: written main thread, read render thread.
   gz::math::Vector3d previewPos_;
-  std::string        previewEntityName_;   // name of the live preview entity
+  std::string        previewEntityName_;
+  std::string        previewWorldName_;
   std::mutex renderMutex_;
 
   // Only ever accessed from the render thread — no mutex needed.

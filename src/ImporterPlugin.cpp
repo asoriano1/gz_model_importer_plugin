@@ -5,6 +5,7 @@
 
 #include <QCoreApplication>
 #include <QEvent>
+#include <QtConcurrent/QtConcurrentRun>
 #include <QQmlComponent>
 #include <QQmlContext>
 #include <QQuickItem>
@@ -15,6 +16,9 @@
 #include <gz/gui/GuiEvents.hh>
 #include <gz/plugin/Register.hh>
 #include <gz/sim/gui/GuiEvents.hh>
+#include <gz/transport/Node.hh>
+#include <gz/msgs/empty.pb.h>
+#include <gz/msgs/scene.pb.h>
 #include <gz/rendering/Camera.hh>
 #include <gz/rendering/Material.hh>
 #include <gz/rendering/RenderingIface.hh>
@@ -130,9 +134,13 @@ void RobotImporterGui::onPreviewSpawned(const QString &_entityName)
     std::lock_guard<std::mutex> lock(renderMutex_);
     previewPos_        = gz::math::Vector3d(opts->poseX(), opts->poseY(), opts->poseZ());
     previewEntityName_ = _entityName.toStdString();
+    previewWorldName_  = backend_->previewController()->worldName().toStdString();
   }
   previewAlive_.store(true, std::memory_order_release);
-  highlightPending_.store(true, std::memory_order_release);
+  // Only queue a highlight pass if the mode actually modifies the visual.
+  // Mode 0 (None) must not touch materials or wireframe on spawn.
+  if (highlightMode_.load(std::memory_order_relaxed) != 0)
+    highlightPending_.store(true, std::memory_order_release);
   selectionPending_.store(true, std::memory_order_release);
   cameraState_.store(1, std::memory_order_release);
 }
@@ -190,16 +198,11 @@ static void applyHighlight(gz::rendering::VisualPtr vis, int mode)
 {
   if (!vis) return;
 
-  // Wireframe flag: always kept in sync, independent of materials.
   vis->SetWireframe(mode == 2);
 
-  // Material manipulation is needed ONLY for Transparency (mode 1) and its
-  // inverse reset (mode 0). Wireframe (mode 2) never touches materials.
-  if (mode != 2)
+  if (mode == 1)
   {
-    const double alpha = (mode == 1) ? 0.6 : 0.0;
-
-    // ---- Geometry-level materials (mesh visuals: DAE/STL/OBJ) ----
+    // Transparency: clone each material to avoid touching shared originals.
     const unsigned int geomCount = vis->GeometryCount();
     for (unsigned int g = 0; g < geomCount; ++g)
     {
@@ -208,24 +211,41 @@ static void applyHighlight(gz::rendering::VisualPtr vis, int mode)
       auto gMat = geom->Material();
       if (!gMat) continue;
       auto clone = gMat->Clone();
-      clone->SetTransparency(alpha);
+      clone->SetTransparency(0.6);
       geom->SetMaterial(clone, false);
     }
-
-    // ---- Visual-level material fallback (SDF-explicit materials) ----
     if (geomCount == 0)
     {
       auto mat = vis->Material();
       if (mat)
       {
         auto clone = mat->Clone();
-        clone->SetTransparency(alpha);
+        clone->SetTransparency(0.6);
         vis->SetGeometryMaterial(clone, false);
       }
     }
   }
+  else if (mode == 0)
+  {
+    // None: reset transparency in-place — no Clone(), no SetMaterial() call.
+    // Called only when switching back from Transparent; if materials are
+    // originals (never touched), SetTransparency(0.0) is a safe no-op.
+    const unsigned int geomCount = vis->GeometryCount();
+    for (unsigned int g = 0; g < geomCount; ++g)
+    {
+      auto geom = vis->GeometryByIndex(g);
+      if (!geom) continue;
+      auto mat = geom->Material();
+      if (mat) mat->SetTransparency(0.0);
+    }
+    if (geomCount == 0)
+    {
+      auto mat = vis->Material();
+      if (mat) mat->SetTransparency(0.0);
+    }
+  }
+  // mode 2 (Wireframe): SetWireframe already done above; no material changes.
 
-  // Recurse into child visuals.
   for (unsigned int i = 0; i < vis->ChildCount(); ++i)
   {
     auto child = std::dynamic_pointer_cast<gz::rendering::Visual>(
@@ -277,55 +297,59 @@ void RobotImporterGui::onRender()
 
         if (needSelection)
         {
-          // visual->Id() returns the rendering-assigned ID; VisualById uses
-          // the scene's registered ID (set at CreateVisual time). Confirm they
-          // match — if VisualById returns null the scene broadcaster registered
-          // the visual under a different key and SelectEntities won't find it.
-          const unsigned int rawId = visual->Id();
-          const auto crossCheck = scene->VisualById(rawId);
-          if (!crossCheck)
+          // visual->Id() is the rendering-assigned ID, NOT the gz-sim entity
+          // ID. EntityTree / ComponentInspector need the gz-sim entity ID.
+          // Fetch it from /world/<w>/scene/info in a worker thread to avoid
+          // blocking the render thread.
+          std::string worldName;
           {
-            // ID mismatch: iterate the scene to find the registered ID.
-            unsigned int resolvedId = rawId;
-            for (unsigned int vi = 0; vi < scene->VisualCount(); ++vi)
-            {
-              auto v = scene->VisualByIndex(vi);
-              if (v && v->Name() == entityName)
-              {
-                // The registered ID is the one used as the map key —
-                // derive it by checking VisualById for the current index.
-                // Since VisualByIndex gives us the correct object, iterate
-                // IDs nearby as a last resort — but prefer Name match.
-                resolvedId = v->Id();
-                break;
-              }
-            }
-            gzmsg << "[robot_importer_gui] VisualById(" << rawId
-                  << ") miss — using resolvedId=" << resolvedId
-                  << " for '" << entityName << "'.\n";
-            const gz::sim::Entity id = static_cast<gz::sim::Entity>(resolvedId);
-            QMetaObject::invokeMethod(gz::gui::App(), [id]()
-            {
-              gz::sim::gui::events::DeselectAllEntities deselectEv(false);
-              gz::sim::gui::events::EntitiesSelected    selectEv({id}, true);
-              QCoreApplication::sendEvent(gz::gui::App(), &deselectEv);
-              QCoreApplication::sendEvent(gz::gui::App(), &selectEv);
-            }, Qt::QueuedConnection);
-          }
-          else
-          {
-            const gz::sim::Entity id = static_cast<gz::sim::Entity>(rawId);
-            QMetaObject::invokeMethod(gz::gui::App(), [id]()
-            {
-              gz::sim::gui::events::DeselectAllEntities deselectEv(false);
-              gz::sim::gui::events::EntitiesSelected    selectEv({id}, true);
-              QCoreApplication::sendEvent(gz::gui::App(), &deselectEv);
-              QCoreApplication::sendEvent(gz::gui::App(), &selectEv);
-            }, Qt::QueuedConnection);
+            std::lock_guard<std::mutex> lock(renderMutex_);
+            worldName = previewWorldName_;
           }
           selectionPending_.store(false, std::memory_order_release);
-          gzmsg << "[robot_importer_gui] Selection queued for entity "
-                << rawId << " ('" << entityName << "').\n";
+
+          QtConcurrent::run([worldName, entityName]()
+          {
+            gz::sim::Entity id = 0;
+            if (!worldName.empty())
+            {
+              gz::transport::Node node;
+              gz::msgs::Empty     req;
+              gz::msgs::Scene     rep;
+              bool result = false;
+              node.Request("/world/" + worldName + "/scene/info",
+                           req, 500u, rep, result);
+              if (result)
+              {
+                for (int i = 0; i < rep.model_size(); ++i)
+                {
+                  if (rep.model(i).name() == entityName)
+                  {
+                    id = static_cast<gz::sim::Entity>(rep.model(i).id());
+                    break;
+                  }
+                }
+              }
+            }
+
+            if (id == 0)
+            {
+              gzwarn << "[robot_importer_gui] Could not resolve entity ID for '"
+                     << entityName << "' — selection skipped.\n";
+              return;
+            }
+
+            gzmsg << "[robot_importer_gui] Selecting entity " << id
+                  << " ('" << entityName << "').\n";
+
+            QMetaObject::invokeMethod(gz::gui::App(), [id]()
+            {
+              gz::sim::gui::events::DeselectAllEntities deselectEv(false);
+              gz::sim::gui::events::EntitiesSelected    selectEv({id}, true);
+              QCoreApplication::sendEvent(gz::gui::App(), &deselectEv);
+              QCoreApplication::sendEvent(gz::gui::App(), &selectEv);
+            }, Qt::QueuedConnection);
+          });
         }
       }
       // else: visual not in scene yet — keep flags true, retry next frame

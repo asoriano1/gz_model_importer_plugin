@@ -43,6 +43,7 @@ class PreviewController : public QObject
 
   public: bool    isPreviewing()      const;
   public: QString previewEntityName() const;
+  public: QString worldName()         const;
 
   /// Enter preview mode. Spawns the preview entity at _pose.
   /// \param _worldName    Active Gazebo world name.
