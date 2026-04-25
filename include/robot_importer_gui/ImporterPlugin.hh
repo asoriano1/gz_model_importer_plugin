@@ -39,7 +39,7 @@ class RobotImporterGui : public gz::gui::Plugin
 {
   Q_OBJECT
 
-  /// 0=None  1=Transparency (default)  2=Wireframe
+  /// 0=None (default)  1=Transparency  2=Wireframe
   Q_PROPERTY(int highlightMode READ highlightMode
              WRITE setHighlightMode NOTIFY highlightModeChanged)
 
@@ -86,11 +86,13 @@ class RobotImporterGui : public gz::gui::Plugin
 
   // ---------- highlight state (main→render handoff) ----------
   // 0=None  1=Transparency  2=Wireframe
-  std::atomic<int> highlightMode_{2};  // default: Wireframe (reliable for all mesh types)
-  // Set to true when the highlight needs to be (re-)applied on the render thread.
+  std::atomic<int>  highlightMode_{0};
   std::atomic<bool> highlightPending_{false};
-  // True while a preview entity is alive.
   std::atomic<bool> previewAlive_{false};
+
+  // ---------- selection state (main→render handoff) ----------
+  // Set to true on spawn; cleared after first successful selection.
+  std::atomic<bool> selectionPending_{false};
 };
 
 }  // namespace robot_importer_gui

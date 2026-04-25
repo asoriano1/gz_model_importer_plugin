@@ -15,7 +15,7 @@ find_package(ament_index_cpp REQUIRED)
 
 # ---- Gazebo Harmonic (via ROS 2 Jazzy vendor packages) ----
 find_package(gz-gui8        REQUIRED)
-find_package(gz-sim8        REQUIRED)
+find_package(gz-sim8        REQUIRED COMPONENTS gui)
 find_package(gz-transport13 REQUIRED)
 find_package(gz-msgs10      REQUIRED)
 find_package(gz-rendering8  REQUIRED)
@@ -85,6 +85,7 @@ target_link_libraries(${PLUGIN_NAME}
   PRIVATE
     gz-gui8::gz-gui8
     gz-sim8::gz-sim8
+    gz-sim8::gz-sim8-gui
     gz-transport13::gz-transport13
     gz-msgs10::gz-msgs10
     gz-rendering8::gz-rendering8

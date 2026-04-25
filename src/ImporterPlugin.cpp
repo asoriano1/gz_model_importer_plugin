@@ -3,6 +3,7 @@
 #include <cmath>
 #include <string>
 
+#include <QCoreApplication>
 #include <QEvent>
 #include <QQmlComponent>
 #include <QQmlContext>
@@ -13,6 +14,7 @@
 #include <gz/gui/Application.hh>
 #include <gz/gui/GuiEvents.hh>
 #include <gz/plugin/Register.hh>
+#include <gz/sim/gui/GuiEvents.hh>
 #include <gz/rendering/Camera.hh>
 #include <gz/rendering/Material.hh>
 #include <gz/rendering/RenderingIface.hh>
@@ -131,6 +133,7 @@ void RobotImporterGui::onPreviewSpawned(const QString &_entityName)
   }
   previewAlive_.store(true, std::memory_order_release);
   highlightPending_.store(true, std::memory_order_release);
+  selectionPending_.store(true, std::memory_order_release);
   cameraState_.store(1, std::memory_order_release);
 }
 
@@ -138,6 +141,12 @@ void RobotImporterGui::onPreviewDone()
 {
   previewAlive_.store(false, std::memory_order_release);
   highlightPending_.store(false, std::memory_order_release);
+  selectionPending_.store(false, std::memory_order_release);
+
+  // Deselect the preview entity when preview ends.
+  QCoreApplication::postEvent(
+      gz::gui::App(),
+      new gz::sim::gui::events::DeselectAllEntities(/*fromUser=*/false));
 
   if (cameraState_.load(std::memory_order_relaxed) == 1)
   {
@@ -234,16 +243,18 @@ void RobotImporterGui::onRender()
 {
   const int camState = cameraState_.load(std::memory_order_acquire);
   const bool needHighlight = highlightPending_.load(std::memory_order_acquire);
+  const bool needSelect    = selectionPending_.load(std::memory_order_acquire);
 
-  if (camState == 0 && !needHighlight)
+  if (camState == 0 && !needHighlight && !needSelect)
     return;
 
   auto scene = gz::rendering::sceneFromFirstRenderEngine();
   if (!scene || !scene->IsInitialized())
     return;
 
-  // ---- highlight (applied as soon as the visual appears in the scene) ----
-  if (needHighlight)
+  // ---- highlight + selection (applied as soon as the visual appears) ----
+  const bool needSelection = selectionPending_.load(std::memory_order_acquire);
+  if (needHighlight || needSelection)
   {
     std::string entityName;
     {
@@ -256,17 +267,36 @@ void RobotImporterGui::onRender()
       auto visual = scene->VisualByName(entityName);
       if (visual)
       {
-        const int mode = highlightMode_.load(std::memory_order_relaxed);
-        applyHighlight(visual, mode);
-        highlightPending_.store(false, std::memory_order_release);
-        gzmsg << "[robot_importer_gui] Highlight mode " << mode
-              << " applied to '" << entityName << "'.\n";
+        if (needHighlight)
+        {
+          const int mode = highlightMode_.load(std::memory_order_relaxed);
+          applyHighlight(visual, mode);
+          highlightPending_.store(false, std::memory_order_release);
+          gzmsg << "[robot_importer_gui] Highlight mode " << mode
+                << " applied to '" << entityName << "'.\n";
+        }
+
+        if (needSelection)
+        {
+          const gz::sim::Entity id =
+              static_cast<gz::sim::Entity>(visual->Id());
+          QCoreApplication::postEvent(
+              gz::gui::App(),
+              new gz::sim::gui::events::DeselectAllEntities(false));
+          QCoreApplication::postEvent(
+              gz::gui::App(),
+              new gz::sim::gui::events::EntitiesSelected({id}, true));
+          selectionPending_.store(false, std::memory_order_release);
+          gzmsg << "[robot_importer_gui] Entity " << id
+                << " '" << entityName << "' selected.\n";
+        }
       }
-      // else: visual not in scene yet — keep highlightPending_ true, retry next frame
+      // else: visual not in scene yet — keep flags true, retry next frame
     }
     else
     {
       highlightPending_.store(false, std::memory_order_release);
+      selectionPending_.store(false, std::memory_order_release);
     }
   }
 
