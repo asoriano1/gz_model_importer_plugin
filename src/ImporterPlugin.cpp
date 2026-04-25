@@ -143,10 +143,9 @@ void RobotImporterGui::onPreviewDone()
   highlightPending_.store(false, std::memory_order_release);
   selectionPending_.store(false, std::memory_order_release);
 
-  // Deselect the preview entity when preview ends.
-  QCoreApplication::postEvent(
-      gz::gui::App(),
-      new gz::sim::gui::events::DeselectAllEntities(/*fromUser=*/false));
+  // Deselect the preview entity when preview ends (main thread → sendEvent ok).
+  gz::sim::gui::events::DeselectAllEntities deselectEv(false);
+  QCoreApplication::sendEvent(gz::gui::App(), &deselectEv);
 
   if (cameraState_.load(std::memory_order_relaxed) == 1)
   {
@@ -280,15 +279,17 @@ void RobotImporterGui::onRender()
         {
           const gz::sim::Entity id =
               static_cast<gz::sim::Entity>(visual->Id());
-          QCoreApplication::postEvent(
-              gz::gui::App(),
-              new gz::sim::gui::events::DeselectAllEntities(false));
-          QCoreApplication::postEvent(
-              gz::gui::App(),
-              new gz::sim::gui::events::EntitiesSelected({id}, true));
+          // sendEvent() must run on the main thread; marshal via invokeMethod.
+          QMetaObject::invokeMethod(gz::gui::App(), [id]()
+          {
+            gz::sim::gui::events::DeselectAllEntities deselectEv(false);
+            gz::sim::gui::events::EntitiesSelected    selectEv({id}, true);
+            QCoreApplication::sendEvent(gz::gui::App(), &deselectEv);
+            QCoreApplication::sendEvent(gz::gui::App(), &selectEv);
+          }, Qt::QueuedConnection);
           selectionPending_.store(false, std::memory_order_release);
-          gzmsg << "[robot_importer_gui] Entity " << id
-                << " '" << entityName << "' selected.\n";
+          gzmsg << "[robot_importer_gui] Selection queued for entity "
+                << id << " ('" << entityName << "').\n";
         }
       }
       // else: visual not in scene yet — keep flags true, retry next frame
