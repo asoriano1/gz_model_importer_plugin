@@ -6,9 +6,9 @@
        - three model-level plugins detected by preflight and stripped in preview
        - gz_frame_id / topic configuration for ros_gz_bridge
 
-     After final import, start the bridge with:
-       ros2 run ros_gz_bridge bridge_node \
-         --ros-args -p config_file:=<path>/sensor_test_bridge.yaml
+     After final import, start the bridge (see sensor_test_bridge.yaml):
+       ros2 run ros_gz_bridge bridge_node
+         ros-args: -p config_file:=path/to/sensor_test_bridge.yaml
 
      Then verify:
        ros2 topic hz /<namespace>/imu/data    # ~100 Hz
