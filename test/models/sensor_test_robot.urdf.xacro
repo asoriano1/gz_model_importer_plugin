@@ -137,7 +137,9 @@
           <max>30.0</max>
           <resolution>0.01</resolution>
         </range>
-        <noise type="gaussian">
+        <!-- SDF lidar noise: type is a child element, not an attribute -->
+        <noise>
+          <type>gaussian</type>
           <mean>0.0</mean>
           <stddev>0.01</stddev>
         </noise>
@@ -227,14 +229,8 @@
          Or launch with ros_gz_sim empty world which includes them:
            ros2 launch ros_gz_sim gz_sim.launch.py gz_args:="-r empty.sdf"
   ============================================================ -->
-  <gazebo>
-    <!-- gz_ros2_control: model plugin, works correctly at model level. -->
-    <plugin filename="gz_ros2_control-system"
-            name="gz::sim::systems::GazeboSimROS2ControlPlugin">
-      <ros>
-        <namespace>${ns_p}</namespace>
-      </ros>
-    </plugin>
-  </gazebo>
+  <!-- No model-level system plugins needed for this test model.
+       Sensor pipeline (gz-sim-sensors-system, gz-sim-imu-system) must be
+       loaded at world level — see test/worlds/importer_test.sdf. -->
 
 </robot>
