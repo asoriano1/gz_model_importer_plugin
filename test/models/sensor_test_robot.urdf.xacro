@@ -207,27 +207,30 @@
 
   <!-- ============================================================
        MODEL-LEVEL PLUGINS
-       These are detected by SdfPreflightChecker and stripped by
-       PreviewController::preparePreviewSdf() during preview.
-       They become active only after final import.
+       Detected by SdfPreflightChecker and stripped in preview.
+       Active only after final import.
+
+       NOTE on sensor system plugins:
+         gz-sim-imu-system and gz-sim-sensors-system must be WORLD
+         plugins for lidar and camera sensors to work (they need the
+         world-level rendering pipeline). As model plugins they only
+         partially initialise — IMU works, lidar/camera do not.
+
+         Add these to your world SDF:
+           <plugin filename="gz-sim-sensors-system"
+                   name="gz::sim::systems::Sensors">
+             <render_engine>ogre2</render_engine>
+           </plugin>
+           <plugin filename="gz-sim-imu-system"
+                   name="gz::sim::systems::Imu"/>
+
+         Or launch with ros_gz_sim empty world which includes them:
+           ros2 launch ros_gz_sim gz_sim.launch.py gz_args:="-r empty.sdf"
   ============================================================ -->
   <gazebo>
-    <!-- IMU system: must be loaded as world plugin in Gazebo Harmonic.
-         Including here as a model plugin documents the dependency and
-         exercises the preflight plugin detector. -->
-    <plugin filename="gz-sim-imu-system"
-            name="gz::sim::systems::Imu"/>
-
-    <!-- Sensors system: required for camera rendering. World plugin. -->
-    <plugin filename="gz-sim-sensors-system"
-            name="gz::sim::systems::Sensors">
-      <render_engine>ogre2</render_engine>
-    </plugin>
-
-    <!-- ROS2 bridge: publishes gz sensor topics to ROS2.
-         Configure topics in sensor_test_bridge.yaml. -->
-    <plugin filename="gz-sim-ros-node-system"
-            name="gz::sim::systems::RosNode">
+    <!-- gz_ros2_control: model plugin, works correctly at model level. -->
+    <plugin filename="gz_ros2_control-system"
+            name="gz::sim::systems::GazeboSimROS2ControlPlugin">
       <ros>
         <namespace>${ns_p}</namespace>
       </ros>

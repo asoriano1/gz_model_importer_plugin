@@ -89,10 +89,23 @@ ros2 topic hz /sensor_test/scan            # ~10 Hz
 ros2 topic hz /sensor_test/camera/image_raw  # ~30 Hz
 ```
 
-> **Note:** `gz-sim-imu-system` and `gz-sim-sensors-system` must be loaded as
-> **world plugins** in your Gazebo Harmonic world SDF for sensors to actually
-> publish. These plugins in the model URDF document the dependency and exercise
-> the preflight detector, but the world must also load them.
+**Requisito del mundo:** `gz-sim-sensors-system` y `gz-sim-imu-system` deben
+ser **world plugins** — como model plugins lidar y camera no funcionan porque
+necesitan el pipeline de renderizado del mundo. El IMU sí funciona como model
+plugin (no necesita rendering).
+
+Opción 1 — añadir al world SDF:
+```xml
+<plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+  <render_engine>ogre2</render_engine>
+</plugin>
+<plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
+```
+
+Opción 2 — usar el mundo de ros_gz_sim que ya los incluye:
+```bash
+ros2 launch ros_gz_sim gz_sim.launch.py gz_args:="-r empty.sdf"
+```
 
 ---
 
