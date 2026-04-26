@@ -3,16 +3,98 @@ import QtQuick.Controls 2.2
 import QtQuick.Dialogs 1.3
 import QtQuick.Layouts 1.3
 
-// Context properties set on engine rootContext() in plugin constructor:
-//   backend, fileSelector, importOptions, previewCtrl, importerPlugin
+// Context properties injected via engine rootContext() in ImporterPlugin constructor:
+//   backend        → ImporterBackend
+//   fileSelector   → FileSelector
+//   importOptions  → ImportOptions
+//   previewCtrl    → PreviewController
+//   importerPlugin → RobotImporterGui (for highlightMode)
 Rectangle {
   id: root
   color: "transparent"
-  Layout.minimumWidth: 300
-  Layout.minimumHeight: 380
+  // anchors.fill lets the root fill whatever space the Gazebo container
+  // assigns it.  implicitHeight (fixed) is what the container reads to
+  // decide how tall to make that space — keeping it at 480 prevents the
+  // panel from growing to match the full content height, which would
+  // defeat the internal ScrollView.
   anchors.fill: parent
+  implicitWidth:  300
+  implicitHeight: 480
+  Layout.minimumWidth:    300
+  Layout.minimumHeight:   300
+  Layout.preferredHeight: 480
+  Layout.maximumHeight:   480
 
-  // Numeric input that stays in sync with an ImportOptions property.
+  // ---- Derived state helpers ----
+  readonly property bool isIdle:         backend.stateName === "Idle"
+  readonly property bool isPreviewActive: previewCtrl.previewing
+  readonly property bool isBusy:         backend.busy
+  readonly property bool isDone:         backend.stateName === "Done"
+
+  readonly property bool isCancellable: {
+    var s = backend.stateName
+    return s === "Previewing" || s === "Configuring" || s === "Spawning"
+  }
+
+  readonly property bool isImportable: {
+    var s = backend.stateName
+    return s === "Ready"       || s === "Configuring" ||
+           s === "PreviewFailed" || s === "SpawnFailed"
+  }
+
+  readonly property bool showOptions: {
+    var s = backend.stateName
+    return s === "Ready"       || s === "Configuring" || s === "Previewing" ||
+           s === "PreviewFailed" || s === "SpawnFailed"
+  }
+
+  readonly property bool isErrorState: {
+    var s = backend.stateName
+    return s === "SpawnFailed"      || s === "PreviewFailed" ||
+           s === "ExpansionFailed"  || s === "ConversionFailed" || s === "Error"
+  }
+
+  readonly property bool hasLogs:
+    backend.preflightReport.length > 0 ||
+    backend.lastWarning.length  > 0    ||
+    backend.lastError.length    > 0
+
+  // ---- Pill color ----
+  function pillColor() {
+    var s = backend.stateName
+    if (s === "Done") return "#2e7d32"
+    if (s === "SpawnFailed" || s === "PreviewFailed" ||
+        s === "ExpansionFailed" || s === "ConversionFailed" || s === "Error")
+      return "#c62828"
+    if (s === "Configuring")  return "#e65100"
+    if (s === "Spawning" || s === "Expanding" || s === "Converting")
+      return "#1565c0"
+    if (s === "Previewing")   return "#6a1b9a"
+    if (s === "Ready")        return "#2e7d32"
+    return "#757575"
+  }
+
+  // ---- Friendly state label ----
+  function prettyState() {
+    var s = backend.stateName
+    if (s === "Idle")             return "Idle"
+    if (s === "FileSelected")     return "Loading…"
+    if (s === "Expanding")        return "Expanding XACRO…"
+    if (s === "ExpansionFailed")  return "Expansion failed"
+    if (s === "Converting")       return "Loading SDF…"
+    if (s === "ConversionFailed") return "Conversion failed"
+    if (s === "Ready")            return "Ready"
+    if (s === "Previewing")       return "Spawning preview…"
+    if (s === "PreviewFailed")    return "Preview failed"
+    if (s === "Configuring")      return "Preview active"
+    if (s === "Spawning")         return "Importing…"
+    if (s === "SpawnFailed")      return "Import failed"
+    if (s === "Done")             return "Done"
+    if (s === "Error")            return "Error"
+    return s
+  }
+
+  // Numeric pose input that stays in sync with an ImportOptions property.
   component PoseField: TextField {
     property double modelValue: 0.0
     property bool   userEditing: false
@@ -23,345 +105,667 @@ Rectangle {
     validator: DoubleValidator { decimals: 3; notation: DoubleValidator.StandardNotation }
 
     onActiveFocusChanged: userEditing = activeFocus
-    onModelValueChanged: if (!userEditing) text = modelValue.toFixed(3)
+    onModelValueChanged:  if (!userEditing) text = modelValue.toFixed(3)
   }
 
+  FileDialog {
+    id: fileDialog
+    title: "Select robot file"
+    folder: shortcuts.home
+    nameFilters: [
+      "Robot description (*.urdf *.xacro *.sdf *.xml)",
+      "URDF (*.urdf *.xml)", "XACRO (*.xacro)", "SDF (*.sdf)", "All files (*)"
+    ]
+    onAccepted: fileSelector.onFileChosen(fileDialog.fileUrl.toString())
+  }
+
+  FileDialog {
+    id: saveLaunchDialog
+    title: "Save launch file"
+    selectExisting: false
+    defaultSuffix: "py"
+    nameFilters: ["Python launch files (*.py)", "All files (*)"]
+    onAccepted: backend.saveLaunchFile(saveLaunchDialog.fileUrl.toString())
+  }
+
+  // Auto-expand the log section when diagnostics become available.
+  Connections {
+    target: backend
+
+    // Expand on error-state transitions (SpawnFailed, PreviewFailed, etc.)
+    function onStateChanged() {
+      if (root.isErrorState && root.hasLogs)
+        logsCard.logsExpanded = true
+    }
+
+    // Also expand when an error is set without a state transition — e.g. when
+    // importRobot() or requestPreview() fails synchronously (world not found)
+    // while the state stays in Ready or Configuring.
+    function onLastErrorChanged() {
+      if (backend.lastError.length > 0)
+        logsCard.logsExpanded = true
+    }
+  }
+
+  // ================================================================
   ScrollView {
     anchors.fill: parent
     contentWidth: availableWidth
+    clip: true
+    ScrollBar.vertical.policy: ScrollBar.AsNeeded
 
     Item {
-      width: root.width
-      implicitHeight: col.implicitHeight + 20
+      width:  root.width
+      height: mainCol.implicitHeight + 16
 
       ColumnLayout {
-        id: col
-        anchors { top: parent.top; left: parent.left; right: parent.right; margins: 14 }
-        spacing: 7
+        id: mainCol
+        anchors { top: parent.top; left: parent.left; right: parent.right; margins: 10 }
+        spacing: 5
 
-        // ---- PREVIEW MODE banner ----
+        // ---- Section 1: preview banner (only while preview is live) ----
         Rectangle {
-          visible: previewCtrl.previewing
+          visible: isPreviewActive
           Layout.fillWidth: true
-          implicitHeight: 28
-          color: "#e65100"
-          radius: 3
+          implicitHeight: 26
+          color: "#bf360c"
+          radius: 4
 
           Label {
             anchors.centerIn: parent
-            text: "MODEL PREVIEW (SIM PAUSED)"
-            color: "white"; font.bold: true; font.pixelSize: 13
+            text: "MODEL PREVIEW ACTIVE  •  SIMULATION PAUSED"
+            color: "white"; font.bold: true; font.pixelSize: 12
           }
         }
 
-        // ---- Status line ----
-        RowLayout {
-          Layout.fillWidth: true
-          spacing: 6
-
-          Label { text: "Status:"; font.pixelSize: 13; color: "#555" }
-          Label {
-            text: backend.stateName
-            font.bold: true; font.pixelSize: 13
-            color: {
-              var s = backend.stateName
-              if (s === "Done") return "#2e7d32"
-              if (s === "ConversionFailed" || s === "ExpansionFailed" ||
-                  s === "PreviewFailed"    || s === "SpawnFailed")
-                return "#b71c1c"
-              return "#333333"
-            }
-          }
-          BusyIndicator { running: backend.busy; width: 16; height: 16 }
-          Item { Layout.fillWidth: true }
-        }
-
-        Label {
-          visible: backend.lastWarning.length > 0
-          text: "(!) " + backend.lastWarning
-          color: "#e65100"; font.pixelSize: 12
-          wrapMode: Text.Wrap; Layout.fillWidth: true
-        }
-        Label {
-          visible: backend.lastError.length > 0
-          text: backend.lastError
-          color: "#b71c1c"; font.pixelSize: 12
-          wrapMode: Text.Wrap; Layout.fillWidth: true
-        }
-
-        // ---- Preflight report ----
+        // ---- Section 2: status row ----
         Rectangle {
-          visible: backend.preflightReport.length > 0
           Layout.fillWidth: true
-          color: backend.preflightReport.indexOf("unresolved") >= 0 ||
-                 backend.preflightReport.indexOf("Ogre") >= 0
-                 ? "#FFF3E0" : "#F1F8E9"
-          border.color: backend.preflightReport.indexOf("unresolved") >= 0 ||
-                        backend.preflightReport.indexOf("Ogre") >= 0
-                        ? "#e65100" : "#558b2f"
-          border.width: 1; radius: 3
-          implicitHeight: preflightLabel.implicitHeight + 10
+          implicitHeight: statusRow.implicitHeight + 10
+          color: "#eeeeee"
+          radius: 4
 
-          Label {
-            id: preflightLabel
-            anchors { left: parent.left; right: parent.right; top: parent.top; margins: 5 }
-            text: backend.preflightReport
-            font.pixelSize: 11; font.family: "monospace"
-            color: "#333"; wrapMode: Text.Wrap
+          RowLayout {
+            id: statusRow
+            anchors {
+              left:  parent.left;  right: parent.right
+              verticalCenter: parent.verticalCenter
+              leftMargin: 8;  rightMargin: 8
+            }
+            spacing: 8
+
+            Label { text: "Status"; font.pixelSize: 12; color: "#616161" }
+
+            // Coloured pill
+            Rectangle {
+              radius: 3
+              color: pillColor()
+              implicitWidth:  pillLabel.implicitWidth  + 16
+              implicitHeight: pillLabel.implicitHeight +  6
+
+              Label {
+                id: pillLabel
+                anchors.centerIn: parent
+                text:  prettyState()
+                color: "white"; font.bold: true; font.pixelSize: 12
+              }
+            }
+
+            BusyIndicator {
+              running: isBusy; visible: isBusy
+              width: 18; height: 18
+            }
+
+            Item { Layout.fillWidth: true }
+
+            // Success message only in Done state
+            Label {
+              visible: isDone
+              text: "Imported successfully"
+              color: "#2e7d32"; font.bold: true; font.pixelSize: 12
+            }
+
+            // Preview entity name tag when preview is live
+            Label {
+              visible: isPreviewActive && previewCtrl.previewEntityName.length > 0
+              text: previewCtrl.previewEntityName
+              font.pixelSize: 11; font.italic: true; color: "#555"
+              elide: Text.ElideRight
+              Layout.maximumWidth: 160
+            }
           }
         }
 
-        Rectangle { height: 1; color: "#dddddd"; Layout.fillWidth: true }
-
-        // ---- File selection ----
-        RowLayout {
+        // ---- Section 3: model file selection ----
+        Rectangle {
           Layout.fillWidth: true
-          spacing: 8
+          implicitHeight: fileCol.implicitHeight + 16
+          color: "#fafafa"
+          border.color: "#e0e0e0"; border.width: 1
+          radius: 4
 
-          Label {
-            id: fileLabel
-            text: {
-              var p = fileSelector.selectedPath
-              if (!p || p.length === 0) return "No file selected"
-              var parts = p.split("/")
-              return parts[parts.length - 1]
+          ColumnLayout {
+            id: fileCol
+            anchors {
+              top: parent.top; left: parent.left; right: parent.right
+              topMargin: 8; leftMargin: 8; rightMargin: 8
             }
-            font.pixelSize: 13
-            elide: Text.ElideRight
-            Layout.fillWidth: true
-            Layout.minimumWidth: 80
-            color: fileSelector.selectedPath.length > 0 ? "#111" : "#888"
-
-            ToolTip.visible: fileSelector.selectedPath.length > 0 && fileLabelHover.containsMouse
-            ToolTip.text: fileSelector.selectedPath
-            ToolTip.delay: 500
-
-            MouseArea {
-              id: fileLabelHover
-              anchors.fill: parent
-              hoverEnabled: true
-              acceptedButtons: Qt.NoButton
-            }
-          }
-
-          Button {
-            text: "Browse"
-            font.pixelSize: 12
-            enabled: !backend.busy
-            onClicked: fileDialog.open()
-            implicitWidth: 90
-          }
-        }
-
-        RowLayout {
-          visible: fileSelector.detectedFormat.length > 0
-          spacing: 6
-          Label { text: "Format:"; font.pixelSize: 12; color: "#555" }
-          Label { text: fileSelector.detectedFormat; font.pixelSize: 12; font.bold: true }
-          Label {
-            visible: previewCtrl.previewing
-            text: "  Preview: " + previewCtrl.previewEntityName
-            font.pixelSize: 12; font.italic: true; color: "#555"
-          }
-        }
-
-        Label {
-          visible: fileSelector.lastError.length > 0
-          text: fileSelector.lastError
-          color: "#b71c1c"; font.pixelSize: 12
-          wrapMode: Text.Wrap; Layout.fillWidth: true
-        }
-
-        FileDialog {
-          id: fileDialog
-          title: "Select robot file"
-          folder: shortcuts.home
-          nameFilters: [
-            "Robot description (*.urdf *.xacro *.sdf *.xml)",
-            "URDF (*.urdf *.xml)", "XACRO (*.xacro)", "SDF (*.sdf)", "All files (*)"
-          ]
-          onAccepted: fileSelector.onFileChosen(fileDialog.fileUrl.toString())
-        }
-
-        // ---- Options section (shown once file is loaded) ----
-        ColumnLayout {
-          id: optionsSection
-          Layout.fillWidth: true
-          spacing: 7
-          property bool poseExpanded: false
-          visible: {
-            var s = backend.stateName
-            return s === "Ready"      || s === "Configuring"  ||
-                   s === "Previewing" || s === "PreviewFailed" ||
-                   s === "SpawnFailed"
-          }
-
-          Rectangle { height: 1; color: "#dddddd"; Layout.fillWidth: true }
-
-          // Instance name + namespace
-          GridLayout {
-            columns: 2; columnSpacing: 8; rowSpacing: 4
-            Layout.fillWidth: true
-
-            Label { text: "Name"; font.pixelSize: 13 }
-            TextField {
-              text: importOptions.instanceName
-              font.pixelSize: 12; Layout.fillWidth: true
-              onEditingFinished: importOptions.instanceName = text
-            }
-
-            Label { text: "Namespace"; font.pixelSize: 13 }
-            TextField {
-              text: importOptions.rosNamespace
-              placeholderText: "(none)"
-              font.pixelSize: 12; Layout.fillWidth: true
-              onEditingFinished: importOptions.rosNamespace = text
-            }
-          }
-
-          // ---- Pose header (clickable toggle) ----
-          Item {
-            Layout.fillWidth: true
-            implicitHeight: poseToggleLabel.implicitHeight + 6
+            spacing: 4
 
             Label {
-              id: poseToggleLabel
-              anchors.verticalCenter: parent.verticalCenter
-              text: (optionsSection.poseExpanded ? "▼" : "▶") + "  Pose  (m / rad)"
-              font.pixelSize: 13; color: "#555"
+              text: "Model file"
+              font.bold: true; font.pixelSize: 12
             }
 
-            MouseArea {
-              anchors.fill: parent
-              cursorShape: Qt.PointingHandCursor
-              onClicked: optionsSection.poseExpanded = !optionsSection.poseExpanded
+            // File picker row: [name+path   |  BROWSE]
+            RowLayout {
+              Layout.fillWidth: true; spacing: 8
+
+              // Two stacked labels: prominent basename + muted full path
+              ColumnLayout {
+                Layout.fillWidth: true; spacing: 1
+
+                Label {
+                  id: fileBaseName
+                  text: {
+                    var p = fileSelector.selectedPath
+                    if (!p || p.length === 0) return "No file selected"
+                    var parts = p.split("/")
+                    return parts[parts.length - 1]
+                  }
+                  font.pixelSize: 13
+                  font.bold: fileSelector.selectedPath.length > 0
+                  elide: Text.ElideRight
+                  Layout.fillWidth: true
+                  color: fileSelector.selectedPath.length > 0 ? "#212121" : "#9e9e9e"
+
+                  ToolTip.visible: fileSelector.selectedPath.length > 0 && fileHover.containsMouse
+                  ToolTip.text:    fileSelector.selectedPath
+                  ToolTip.delay:   500
+
+                  MouseArea {
+                    id: fileHover
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    acceptedButtons: Qt.NoButton
+                  }
+                }
+
+                Label {
+                  visible: fileSelector.selectedPath.length > 0
+                  text:    fileSelector.selectedPath
+                  font.pixelSize: 10; color: "#9e9e9e"
+                  elide: Text.ElideMiddle
+                  Layout.fillWidth: true
+                }
+              }
+
+              Button {
+                text: "Browse"
+                font.pixelSize: 12
+                enabled: !isBusy
+                implicitWidth: 80
+                onClicked: fileDialog.open()
+              }
+            }
+
+            // Detected format badge
+            RowLayout {
+              visible: fileSelector.detectedFormat.length > 0
+              spacing: 6
+              Label { text: "Format:"; font.pixelSize: 11; color: "#616161" }
+              Label {
+                text:  fileSelector.detectedFormat
+                font.pixelSize: 11; font.bold: true; color: "#333"
+              }
+            }
+
+            // File-selection error
+            Label {
+              visible: fileSelector.lastError.length > 0
+              text:    fileSelector.lastError
+              color: "#c62828"; font.pixelSize: 11
+              wrapMode: Text.Wrap; Layout.fillWidth: true
+            }
+          }
+        }
+
+        // ---- Section 4: actions ----
+        RowLayout {
+          Layout.fillWidth: true; spacing: 8
+          visible: isImportable || isCancellable || isErrorState
+
+          Button {
+            text: "Import Model"
+            highlighted: true
+            font.pixelSize: 13
+            visible: isImportable
+            enabled: !isBusy
+            implicitWidth: 120
+            onClicked: {
+              // Collapse stale log output before starting a new import.
+              logsCard.logsExpanded = false
+              backend.importRobot()
             }
           }
 
-          // ---- Position row ----
-          RowLayout {
-            visible: optionsSection.poseExpanded
-            Layout.fillWidth: true; spacing: 4
+          Item { Layout.fillWidth: true }
 
-            Label { text: "X"; font.pixelSize: 12; color: "#555"; Layout.preferredWidth: 18 }
-            PoseField {
-              id: pxf; Layout.fillWidth: true
-              modelValue: importOptions.poseX
-              onEditingFinished: importOptions.poseX = parseFloat(text)
-            }
-            Label { text: "Y"; font.pixelSize: 12; color: "#555"; Layout.preferredWidth: 18 }
-            PoseField {
-              id: pyf; Layout.fillWidth: true
-              modelValue: importOptions.poseY
-              onEditingFinished: importOptions.poseY = parseFloat(text)
-            }
-            Label { text: "Z"; font.pixelSize: 12; color: "#555"; Layout.preferredWidth: 18 }
-            PoseField {
-              id: pzf; Layout.fillWidth: true
-              modelValue: importOptions.poseZ
-              onEditingFinished: importOptions.poseZ = parseFloat(text)
-            }
-          }
-
-          // ---- Orientation row ----
-          RowLayout {
-            visible: optionsSection.poseExpanded
-            Layout.fillWidth: true; spacing: 4
-
-            Label { text: "R"; font.pixelSize: 12; color: "#555"; Layout.preferredWidth: 18 }
-            PoseField {
-              id: prf; Layout.fillWidth: true
-              modelValue: importOptions.poseRoll
-              onEditingFinished: importOptions.poseRoll = parseFloat(text)
-            }
-            Label { text: "P"; font.pixelSize: 12; color: "#555"; Layout.preferredWidth: 18 }
-            PoseField {
-              id: ppf; Layout.fillWidth: true
-              modelValue: importOptions.posePitch
-              onEditingFinished: importOptions.posePitch = parseFloat(text)
-            }
-            Label { text: "Y"; font.pixelSize: 12; color: "#555"; Layout.preferredWidth: 18 }
-            PoseField {
-              id: pwf; Layout.fillWidth: true
-              modelValue: importOptions.poseYaw
-              onEditingFinished: importOptions.poseYaw = parseFloat(text)
+          // "Cancel Import" — only while an operation is actively cancellable.
+          Button {
+            text: "Cancel Import"
+            font.pixelSize: 12
+            visible: isCancellable
+            implicitWidth: 104
+            onClicked: {
+              logsCard.logsExpanded = false
+              var s = backend.stateName
+              if (s === "Configuring") {
+                // Preview entity is in the scene — remove it gracefully and
+                // return to Ready (file stays loaded, pose/name preserved).
+                backend.cancelPreview()
+              } else {
+                // Previewing: spawn still in-flight, isPreviewing()==false so
+                // cancelPreview() would be a no-op; use reset() to abort and
+                // go to Idle (stale ack is discarded by the backend guard).
+                // Spawning: final spawn in-flight; reset() is the only option.
+                backend.reset()
+              }
             }
           }
 
-          // ---- Preview highlight mode ----
-          RowLayout {
-            Layout.fillWidth: true; spacing: 8
-            visible: previewCtrl.previewing
+          // "Reset" in terminal-error states (SpawnFailed, ExpansionFailed, …)
+          Button {
+            text: "Reset"
+            font.pixelSize: 12
+            visible: isErrorState
+            implicitWidth: 66
+            onClicked: backend.reset()
+          }
+        }
 
-            Label { text: "Highlight:"; font.pixelSize: 12; color: "#555" }
+        // ---- Section 5: import options (collapsed after Done or error) ----
+        Rectangle {
+          id: optionsCard
+          visible: showOptions
+          Layout.fillWidth: true
+          implicitHeight: optionsCol.implicitHeight + 16
+          color: "#fafafa"
+          border.color: "#e0e0e0"; border.width: 1
+          radius: 4
 
-            ComboBox {
-              id: highlightCombo
-              font.pixelSize: 12
+          property bool poseExpanded: true
+
+          ColumnLayout {
+            id: optionsCol
+            anchors {
+              top: parent.top; left: parent.left; right: parent.right
+              topMargin: 8; leftMargin: 8; rightMargin: 8
+            }
+            spacing: 4
+
+            Label { text: "Import options"; font.bold: true; font.pixelSize: 12 }
+
+            // Identity fields
+            GridLayout {
+              columns: 2; columnSpacing: 8; rowSpacing: 4
               Layout.fillWidth: true
-              // ComboBox index: 0=Wireframe  1=Transparent  2=None
-              // C++ highlightMode: 0=None  1=Transparency  2=Wireframe
-              model: ["Wireframe", "Transparent", "None"]
 
-              Component.onCompleted: {
-                var m = importerPlugin.highlightMode
-                currentIndex = (m === 2) ? 0 : (m === 1) ? 1 : 2
+              Label { text: "Name";       font.pixelSize: 12; color: "#555" }
+              TextField {
+                text: importOptions.instanceName
+                font.pixelSize: 12; Layout.fillWidth: true
+                onEditingFinished: importOptions.instanceName = text
               }
 
-              onActivated: {
-                var mode = (index === 0) ? 2 : (index === 1) ? 1 : 0
-                importerPlugin.highlightMode = mode
+              Label { text: "Namespace";  font.pixelSize: 12; color: "#555" }
+              TextField {
+                text: importOptions.rosNamespace
+                placeholderText: "(none)"
+                font.pixelSize: 12; Layout.fillWidth: true
+                onEditingFinished: importOptions.rosNamespace = text
+              }
+            }
+
+            // ---- Pose toggle ----
+            Item {
+              Layout.fillWidth: true
+              implicitHeight: poseToggleLabel.implicitHeight + 4
+
+              Label {
+                id: poseToggleLabel
+                anchors.verticalCenter: parent.verticalCenter
+                text: (optionsCard.poseExpanded ? "▼" : "▶") + "  Pose (m / rad)"
+                font.pixelSize: 12; color: "#555"
               }
 
-              Connections {
-                target: importerPlugin
-                function onHighlightModeChanged() {
+              MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: optionsCard.poseExpanded = !optionsCard.poseExpanded
+              }
+            }
+
+            // ---- Position X Y Z ----
+            RowLayout {
+              visible: optionsCard.poseExpanded
+              Layout.fillWidth: true; spacing: 4
+
+              Label { text: "X"; font.pixelSize: 12; color: "#555"; Layout.preferredWidth: 16 }
+              PoseField {
+                Layout.fillWidth: true
+                modelValue: importOptions.poseX
+                onEditingFinished: importOptions.poseX = parseFloat(text)
+              }
+              Label { text: "Y"; font.pixelSize: 12; color: "#555"; Layout.preferredWidth: 16 }
+              PoseField {
+                Layout.fillWidth: true
+                modelValue: importOptions.poseY
+                onEditingFinished: importOptions.poseY = parseFloat(text)
+              }
+              Label { text: "Z"; font.pixelSize: 12; color: "#555"; Layout.preferredWidth: 16 }
+              PoseField {
+                Layout.fillWidth: true
+                modelValue: importOptions.poseZ
+                onEditingFinished: importOptions.poseZ = parseFloat(text)
+              }
+            }
+
+            // ---- Orientation Roll Pitch Yaw ----
+            RowLayout {
+              visible: optionsCard.poseExpanded
+              Layout.fillWidth: true; spacing: 4
+
+              Label { text: "R"; font.pixelSize: 12; color: "#555"; Layout.preferredWidth: 16 }
+              PoseField {
+                Layout.fillWidth: true
+                modelValue: importOptions.poseRoll
+                onEditingFinished: importOptions.poseRoll = parseFloat(text)
+              }
+              Label { text: "P"; font.pixelSize: 12; color: "#555"; Layout.preferredWidth: 16 }
+              PoseField {
+                Layout.fillWidth: true
+                modelValue: importOptions.posePitch
+                onEditingFinished: importOptions.posePitch = parseFloat(text)
+              }
+              Label { text: "Y"; font.pixelSize: 12; color: "#555"; Layout.preferredWidth: 16 }
+              PoseField {
+                Layout.fillWidth: true
+                modelValue: importOptions.poseYaw
+                onEditingFinished: importOptions.poseYaw = parseFloat(text)
+              }
+            }
+
+            // ---- Highlight mode (only while preview entity is live) ----
+            RowLayout {
+              visible: isPreviewActive
+              Layout.fillWidth: true; spacing: 8
+
+              Label { text: "Highlight:"; font.pixelSize: 12; color: "#555" }
+
+              ComboBox {
+                id: highlightCombo
+                font.pixelSize: 12
+                Layout.preferredWidth: 130
+                // ComboBox index: 0=Wireframe  1=Transparent  2=None
+                // C++ highlightMode: 0=None  1=Transparency  2=Wireframe
+                model: ["Wireframe", "Transparent", "None"]
+
+                Component.onCompleted: {
                   var m = importerPlugin.highlightMode
-                  highlightCombo.currentIndex = (m === 2) ? 0 : (m === 1) ? 1 : 2
+                  currentIndex = (m === 2) ? 0 : (m === 1) ? 1 : 2
+                }
+
+                onActivated: {
+                  var mode = (index === 0) ? 2 : (index === 1) ? 1 : 0
+                  importerPlugin.highlightMode = mode
+                }
+
+                Connections {
+                  target: importerPlugin
+                  function onHighlightModeChanged() {
+                    var m = importerPlugin.highlightMode
+                    highlightCombo.currentIndex = (m === 2) ? 0 : (m === 1) ? 1 : 2
+                  }
+                }
+              }
+
+              // TODO: Transparent mode may not render correctly — Material::Clone()
+              // in gz-rendering8 does not fully preserve Ogre2 PBR shaders.
+              // Wireframe is the reliable default.
+              Label {
+                visible: importerPlugin.highlightMode === 1
+                text: "(Transparent may not render correctly)"
+                font.pixelSize: 10; font.italic: true; color: "#e65100"
+                wrapMode: Text.Wrap; Layout.fillWidth: true
+              }
+            }
+          }
+        }
+
+        // ---- Section 6: namespace / injection caveat ----
+        Rectangle {
+          visible: showOptions
+          Layout.fillWidth: true
+          implicitHeight: noteText.implicitHeight + 14
+          color: "#fff8e1"
+          border.color: "#ffe082"; border.width: 1
+          radius: 4
+
+          Label {
+            id: noteText
+            anchors {
+              top: parent.top; left: parent.left; right: parent.right
+              topMargin: 7; leftMargin: 8; rightMargin: 8
+            }
+            text: "Namespace injection applies only to recognised ROS plugin elements. " +
+                  "Hardcoded topics and plugin-internal names are left untouched."
+            font.pixelSize: 10; font.italic: true
+            wrapMode: Text.Wrap
+            color: "#5d4037"
+          }
+        }
+
+        // ---- Section 7: ROS 2 runtime advisory (non-blocking) ----
+        Rectangle {
+          id: runtimeCard
+          visible: backend.runtimeWarning.length > 0
+          Layout.fillWidth: true
+          implicitHeight: runtimeCol.implicitHeight + 16
+          color: "#fff3e0"
+          border.color: "#fb8c00"; border.width: 1
+          radius: 4
+
+          property bool runExpanded: false
+
+          ColumnLayout {
+            id: runtimeCol
+            anchors {
+              top: parent.top; left: parent.left; right: parent.right
+              topMargin: 8; leftMargin: 8; rightMargin: 8
+            }
+            spacing: 4
+
+            Label {
+              text: "ROS 2 runtime likely required"
+              font.bold: true; font.pixelSize: 12; color: "#e65100"
+            }
+
+            Label {
+              text: backend.runtimeWarning
+              font.pixelSize: 11; color: "#bf360c"
+              wrapMode: Text.Wrap; Layout.fillWidth: true
+            }
+
+            RowLayout {
+              spacing: 6; Layout.fillWidth: true
+
+              Button {
+                text: "Copy command"
+                font.pixelSize: 11; implicitWidth: 110
+                onClicked: backend.copyLaunchCommand()
+              }
+
+              Button {
+                text: "Save .py"
+                font.pixelSize: 11; implicitWidth: 70
+                onClicked: saveLaunchDialog.open()
+              }
+
+              Button {
+                text: (runtimeCard.runExpanded ? "▼" : "▶") + " Run…"
+                font.pixelSize: 11; implicitWidth: 72
+                onClicked: runtimeCard.runExpanded = !runtimeCard.runExpanded
+              }
+
+              Item { Layout.fillWidth: true }
+            }
+
+            // Collapsible run section
+            ColumnLayout {
+              visible: runtimeCard.runExpanded
+              Layout.fillWidth: true
+              spacing: 4
+
+              TextField {
+                id: launchCmdField
+                text: backend.customLaunchCommand.length > 0
+                      ? backend.customLaunchCommand
+                      : backend.suggestedLaunchCommand
+                font.pixelSize: 11; font.family: "monospace"
+                Layout.fillWidth: true
+                onEditingFinished: backend.setCustomLaunchCommand(text)
+
+                // Sync when the backend re-generates the command (new file).
+                Connections {
+                  target: backend
+                  function onCustomLaunchCommandChanged() {
+                    if (!launchCmdField.activeFocus)
+                      launchCmdField.text = backend.customLaunchCommand.length > 0
+                                            ? backend.customLaunchCommand
+                                            : backend.suggestedLaunchCommand
+                  }
+                }
+              }
+
+              RowLayout {
+                spacing: 6
+
+                Button {
+                  text: backend.launchRunning ? "Stop" : "Run"
+                  font.pixelSize: 11; implicitWidth: 60
+                  onClicked: backend.launchRunning
+                             ? backend.stopLaunchCommand()
+                             : backend.runLaunchCommand()
+                }
+
+                Label {
+                  visible: backend.launchRunning
+                  text: "● Running"
+                  font.pixelSize: 11; color: "#2e7d32"; font.bold: true
                 }
               }
             }
           }
         }
 
-        Item { implicitHeight: 4 }
-
-        // ---- Action bar ----
-        RowLayout {
+        // ---- Section 8: collapsible details / log output ----
+        Rectangle {
+          id: logsCard
+          visible: hasLogs
           Layout.fillWidth: true
-          spacing: 6
-          visible: backend.stateName !== "Idle"
+          implicitHeight: logsToggleRow.implicitHeight +
+                          (logsExpanded ? logsContent.implicitHeight + 8 : 0) +
+                          14
+          color: "#fafafa"
+          border.color: isErrorState ? "#ef9a9a" : "#e0e0e0"
+          border.width: 1
+          radius: 4
 
-          Button {
-            text: "Import"
-            highlighted: true
-            font.pixelSize: 12
-            visible: {
-              var s = backend.stateName
-              return s === "Ready"       || s === "Configuring" ||
-                     s === "PreviewFailed" || s === "SpawnFailed"
+          property bool logsExpanded: false
+
+          // Toggle row (always visible inside the card)
+          Item {
+            id: logsToggleRow
+            anchors { top: parent.top; left: parent.left; right: parent.right; topMargin: 6; leftMargin: 8; rightMargin: 8 }
+            implicitHeight: logsToggleLabel.implicitHeight + 4
+
+            RowLayout {
+              anchors.fill: parent
+              spacing: 6
+
+              Label {
+                id: logsToggleLabel
+                text: (logsCard.logsExpanded ? "▼" : "▶") + "  Details / Log output"
+                font.pixelSize: 12; color: "#555"
+              }
+
+              // Small error indicator dot
+              Rectangle {
+                visible: isErrorState && backend.lastError.length > 0
+                width: 8; height: 8; radius: 4
+                color: "#c62828"
+              }
+
+              Item { Layout.fillWidth: true }
             }
-            enabled: !backend.busy
-            onClicked: backend.importRobot()
-            implicitWidth: 72
+
+            MouseArea {
+              anchors.fill: parent
+              cursorShape: Qt.PointingHandCursor
+              onClicked: logsCard.logsExpanded = !logsCard.logsExpanded
+            }
           }
 
-          Label {
-            visible: backend.stateName === "Done"
-            text: "Imported successfully."
-            color: "#2e7d32"; font.bold: true; font.pixelSize: 13
-            Layout.fillWidth: true
-          }
+          // Collapsible log content
+          ColumnLayout {
+            id: logsContent
+            visible: logsCard.logsExpanded
+            anchors {
+              top: logsToggleRow.bottom; left: parent.left; right: parent.right
+              topMargin: 4; leftMargin: 8; rightMargin: 8
+            }
+            spacing: 4
 
-          Item { Layout.fillWidth: true }
+            Label {
+              visible: backend.lastWarning.length > 0
+              text: "(!) " + backend.lastWarning
+              color: "#e65100"; font.pixelSize: 11
+              wrapMode: Text.Wrap; Layout.fillWidth: true
+            }
 
-          Button {
-            text: "Cancel"
-            font.pixelSize: 12
-            onClicked: backend.reset()
-            implicitWidth: 64
+            Label {
+              visible: backend.lastError.length > 0
+              text: backend.lastError
+              color: "#c62828"; font.pixelSize: 11
+              wrapMode: Text.Wrap; Layout.fillWidth: true
+            }
+
+            Rectangle {
+              visible: backend.preflightReport.length > 0
+              Layout.fillWidth: true
+              implicitHeight: preflightLabel.implicitHeight + 10
+              color: backend.preflightReport.indexOf("unresolved") >= 0 ||
+                     backend.preflightReport.indexOf("Ogre") >= 0
+                     ? "#FFF3E0" : "#F1F8E9"
+              border.color: backend.preflightReport.indexOf("unresolved") >= 0 ||
+                            backend.preflightReport.indexOf("Ogre") >= 0
+                            ? "#e65100" : "#558b2f"
+              border.width: 1; radius: 3
+
+              Label {
+                id: preflightLabel
+                anchors { left: parent.left; right: parent.right; top: parent.top; margins: 5 }
+                text: backend.preflightReport
+                font.pixelSize: 10; font.family: "monospace"
+                color: "#333"; wrapMode: Text.Wrap
+              }
+            }
           }
         }
+
+        // Bottom padding
+        Item { implicitHeight: 4 }
       }
     }
   }

@@ -1,17 +1,25 @@
 #include "robot_importer_gui/ImporterBackend.hh"
 
+#include <QClipboard>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
+#include <QGuiApplication>
+#include <QProcess>
 #include <QRegExp>
 #include <QSet>
+#include <QTextStream>
+#include <QUrl>
 #include <gz/common/Console.hh>
 
 #include "robot_importer_gui/ImportOptions.hh"
 #include "robot_importer_gui/FileSelector.hh"
+#include "robot_importer_gui/LaunchGenerator.hh"
 #include "robot_importer_gui/ModelLoader.hh"
 #include "robot_importer_gui/PreviewController.hh"
 #include "robot_importer_gui/GzSpawnClient.hh"
 #include "robot_importer_gui/InstanceRewriter.hh"
+#include "robot_importer_gui/Ros2RuntimeAnalyzer.hh"
 #include "robot_importer_gui/SdfUriRewriter.hh"
 #include "robot_importer_gui/SdfPreflightChecker.hh"
 
@@ -146,6 +154,8 @@ void ImporterBackend::reset()
   emit lastErrorChanged();
   emit lastWarningChanged();
   emit preflightReportChanged();
+
+  clearRuntimeState();
   setState(ImporterState::Idle);
 }
 
@@ -369,6 +379,56 @@ void ImporterBackend::onLoadComplete(const QString &sdfContent)
     gzmsg << "[robot_importer_gui] Preflight report:\n"
           << preflightReport_.toStdString() << "\n";
 
+  // Step 3: ROS 2 runtime analysis — non-blocking advisory.
+  {
+    const QString originalPath = fileSelector_->selectedPath();
+    const RuntimeFindings rf   = Ros2RuntimeAnalyzer::analyze(rw.sdf, originalPath);
+
+    if (rf.needsRuntime)
+    {
+      // Build multi-line summary for the UI card.
+      QStringList lines;
+      lines.append(QStringLiteral(
+          "This model may require external ROS 2 nodes/controllers."));
+
+      if (!rf.pluginList.isEmpty())
+      {
+        lines.append(QStringLiteral("Detected:"));
+        for (const QString &pl : rf.pluginList)
+          lines.append(QStringLiteral("  • ") + pl);
+      }
+
+      if (rf.hasXacroControlArgs)
+      {
+        lines.append(QStringLiteral("XACRO control args: ") +
+                     rf.xacroControlArgs.join(QLatin1String(", ")));
+      }
+
+      runtimeWarning_ = lines.join('\n');
+      suggestedLaunchContent_ = LaunchGenerator::launchFileContent(
+          rf,
+          importOptions_->instanceName(),
+          importOptions_->rosNamespace());
+      suggestedLaunchCommand_ = LaunchGenerator::launchCommand(
+          rf,
+          importOptions_->instanceName(),
+          importOptions_->rosNamespace());
+      customLaunchCommand_    = suggestedLaunchCommand_;
+
+      gzmsg << "[robot_importer_gui] Runtime analysis: "
+            << runtimeWarning_.toStdString() << "\n";
+    }
+    else
+    {
+      runtimeWarning_.clear();
+      suggestedLaunchContent_.clear();
+      suggestedLaunchCommand_.clear();
+      customLaunchCommand_.clear();
+    }
+    emit runtimeWarningChanged();
+    emit customLaunchCommandChanged();
+  }
+
   setState(ImporterState::Ready);
   requestPreview();
 }
@@ -444,7 +504,13 @@ void ImporterBackend::onPreviewCancelled()
     return;
   }
 
-  // Normal cancel (user clicked Reset or explicitly cancelled).
+  // Normal cancel (user clicked Cancel or explicitly cancelled preview).
+  // Guard: if reset() was called while the preview removal was in-flight
+  // (e.g. Cancel pressed during Previewing state), the state is already
+  // Idle and we must not transition back to Ready with no file loaded.
+  if (state_ == ImporterState::Idle)
+    return;
+
   gzmsg << "[robot_importer_gui] Preview cancelled — returning to Ready.\n";
   setState(ImporterState::Ready);
 }
@@ -473,9 +539,13 @@ void ImporterBackend::onSpawnComplete(const QString &name)
   }
 
   gzmsg << "[robot_importer_gui] Spawn complete: " << name.toStdString() << "\n";
-  // Clear transient diagnostics — the Done state has its own success indicator.
+  // Clear all transient diagnostics so the Done state shows a clean slate.
+  // lastError_ may contain a stale message from a previous PreviewFailed or
+  // world-not-found attempt that survived through the import flow.
+  lastError_.clear();
   lastWarning_.clear();
   preflightReport_.clear();
+  emit lastErrorChanged();
   emit lastWarningChanged();
   emit preflightReportChanged();
   setState(ImporterState::Done);
@@ -621,6 +691,16 @@ void ImporterBackend::startFileLoad(const QString &path, FileFormat format)
   modelDir_   = info.absoluteDir().absolutePath();
   modelsRoot_ = QFileInfo(modelDir_).absoluteDir().absolutePath();
 
+  // Discard diagnostics from any previous load or import attempt so the
+  // log section does not show stale content while the new file is loading.
+  // lastError_ was already cleared by onFileReady(); clear the rest here.
+  lastWarning_.clear();
+  preflightReport_.clear();
+  emit lastWarningChanged();
+  emit preflightReportChanged();
+
+  clearRuntimeState();
+
   resetPose();
   assignUniqueName(path);
 
@@ -722,6 +802,124 @@ void ImporterBackend::onPoseDebounceTimeout()
         << "," << newPose.yaw << ")\n";
 
   previewController_->respawnAt(newPose);
+}
+
+// ============================================================
+// clearRuntimeState — shared teardown for reset() and startFileLoad()
+// ============================================================
+void ImporterBackend::clearRuntimeState()
+{
+  runtimeWarning_.clear();
+  suggestedLaunchContent_.clear();
+  suggestedLaunchCommand_.clear();
+  customLaunchCommand_.clear();
+  emit runtimeWarningChanged();
+  emit customLaunchCommandChanged();
+
+  // Stop any managed launch process.
+  if (launchProcess_)
+  {
+    launchProcess_->terminate();
+    launchProcess_->waitForFinished(500);
+    launchProcess_->deleteLater();
+    launchProcess_ = nullptr;
+    launchRunning_ = false;
+    emit launchRunningChanged();
+  }
+}
+
+// ============================================================
+// Runtime analysis accessors
+// ============================================================
+QString ImporterBackend::runtimeWarning()         const { return runtimeWarning_; }
+QString ImporterBackend::suggestedLaunchContent() const { return suggestedLaunchContent_; }
+QString ImporterBackend::suggestedLaunchCommand() const { return suggestedLaunchCommand_; }
+QString ImporterBackend::customLaunchCommand()    const { return customLaunchCommand_; }
+bool    ImporterBackend::launchRunning()          const { return launchRunning_; }
+
+void ImporterBackend::setCustomLaunchCommand(const QString &cmd)
+{
+  if (customLaunchCommand_ == cmd) return;
+  customLaunchCommand_ = cmd;
+  emit customLaunchCommandChanged();
+}
+
+void ImporterBackend::copyLaunchCommand()
+{
+  const QString cmd = suggestedLaunchCommand_.isEmpty()
+                    ? customLaunchCommand_
+                    : suggestedLaunchCommand_;
+  if (!cmd.isEmpty())
+    QGuiApplication::clipboard()->setText(cmd);
+}
+
+bool ImporterBackend::saveLaunchFile(const QString &pathOrUrl)
+{
+  // FileDialog gives us a file:// URL; strip the scheme.
+  QString path = pathOrUrl;
+  if (path.startsWith(QLatin1String("file://")))
+    path = QUrl(path).toLocalFile();
+
+  QFile f(path);
+  if (!f.open(QIODevice::WriteOnly | QIODevice::Text))
+  {
+    setError(QStringLiteral("Cannot write launch file: %1").arg(path));
+    return false;
+  }
+  QTextStream out(&f);
+  out << suggestedLaunchContent_;
+  gzmsg << "[robot_importer_gui] Launch file saved: " << path.toStdString() << "\n";
+  return true;
+}
+
+void ImporterBackend::runLaunchCommand()
+{
+  if (launchRunning_) return;
+
+  const QString cmd = customLaunchCommand_.isEmpty()
+                    ? suggestedLaunchCommand_
+                    : customLaunchCommand_;
+  if (cmd.isEmpty()) return;
+
+  const QStringList parts = cmd.split(' ', Qt::SkipEmptyParts);
+  if (parts.isEmpty()) return;
+
+  delete launchProcess_;
+  launchProcess_ = new QProcess(this);
+
+  connect(launchProcess_,
+          QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+          this, [this](int /*code*/, QProcess::ExitStatus /*status*/)
+  {
+    launchRunning_ = false;
+    emit launchRunningChanged();
+  });
+
+  launchProcess_->start(parts.first(), parts.mid(1));
+  if (launchProcess_->waitForStarted(2000))
+  {
+    gzmsg << "[robot_importer_gui] Launch command started: "
+          << cmd.toStdString() << "\n";
+    launchRunning_ = true;
+    emit launchRunningChanged();
+  }
+  else
+  {
+    gzwarn << "[robot_importer_gui] Failed to start: " << cmd.toStdString() << "\n";
+    setError(QStringLiteral("Failed to start: %1").arg(cmd));
+    delete launchProcess_;
+    launchProcess_ = nullptr;
+  }
+}
+
+void ImporterBackend::stopLaunchCommand()
+{
+  if (!launchProcess_ || !launchRunning_) return;
+  launchProcess_->terminate();
+  // Give it a moment; kill if still alive.
+  if (!launchProcess_->waitForFinished(3000))
+    launchProcess_->kill();
+  gzmsg << "[robot_importer_gui] Launch command stopped.\n";
 }
 
 }  // namespace robot_importer_gui

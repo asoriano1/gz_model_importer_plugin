@@ -12,6 +12,8 @@
 #include "robot_importer_gui/ImporterState.hh"
 #include "robot_importer_gui/FileLoader.hh"
 
+class QProcess;
+
 namespace robot_importer_gui
 {
 
@@ -44,6 +46,12 @@ class ImporterBackend : public QObject
   Q_PROPERTY(QString worldName       READ worldName       NOTIFY worldNameChanged)
   Q_PROPERTY(QString preflightReport READ preflightReport NOTIFY preflightReportChanged)
 
+  Q_PROPERTY(QString runtimeWarning         READ runtimeWarning         NOTIFY runtimeWarningChanged)
+  Q_PROPERTY(QString suggestedLaunchContent READ suggestedLaunchContent NOTIFY runtimeWarningChanged)
+  Q_PROPERTY(QString suggestedLaunchCommand READ suggestedLaunchCommand NOTIFY runtimeWarningChanged)
+  Q_PROPERTY(QString customLaunchCommand    READ customLaunchCommand    NOTIFY customLaunchCommandChanged)
+  Q_PROPERTY(bool    launchRunning          READ launchRunning          NOTIFY launchRunningChanged)
+
   Q_PROPERTY(robot_importer_gui::FileSelector   *fileSelector
              READ fileSelector   CONSTANT)
   Q_PROPERTY(robot_importer_gui::ImportOptions  *importOptions
@@ -62,6 +70,12 @@ class ImporterBackend : public QObject
   public: QString worldName()       const;
   public: QString preflightReport() const;
 
+  public: QString runtimeWarning()         const;
+  public: QString suggestedLaunchContent() const;
+  public: QString suggestedLaunchCommand() const;
+  public: QString customLaunchCommand()    const;
+  public: bool    launchRunning()          const;
+
   public: FileSelector      *fileSelector()      const;
   public: ImportOptions     *importOptions()     const;
   public: PreviewController *previewController() const;
@@ -72,11 +86,20 @@ class ImporterBackend : public QObject
   public: Q_INVOKABLE void cancelPreview();
   public: Q_INVOKABLE void setXacroArgs(const QStringList &_args);
 
+  public: Q_INVOKABLE void setCustomLaunchCommand(const QString &cmd);
+  public: Q_INVOKABLE void copyLaunchCommand();
+  public: Q_INVOKABLE bool saveLaunchFile(const QString &path);
+  public: Q_INVOKABLE void runLaunchCommand();
+  public: Q_INVOKABLE void stopLaunchCommand();
+
   signals: void stateChanged();
   signals: void lastErrorChanged();
   signals: void lastWarningChanged();
   signals: void worldNameChanged();
   signals: void preflightReportChanged();
+  signals: void runtimeWarningChanged();
+  signals: void customLaunchCommandChanged();
+  signals: void launchRunningChanged();
 
   // ---- Collaborator slots ----
   private slots:
@@ -107,6 +130,7 @@ class ImporterBackend : public QObject
                                robot_importer_gui::FileFormat format);
   private: void resetPose();
   private: void assignUniqueName(const QString &filePath);
+  private: void clearRuntimeState();
   static QString extractModelBaseName(const QString &filePath);
 
   private: ImporterState state_{ImporterState::Idle};
@@ -116,6 +140,15 @@ class ImporterBackend : public QObject
   private: QString currentSdf_;
   private: QString preflightReport_;
   private: QStringList xacroArgs_;
+
+  // Runtime analysis results — populated in onLoadComplete(), cleared in
+  // startFileLoad() and reset().
+  private: QString runtimeWarning_;
+  private: QString suggestedLaunchContent_;
+  private: QString suggestedLaunchCommand_;
+  private: QString customLaunchCommand_;
+  private: bool    launchRunning_{false};
+  private: QProcess *launchProcess_{nullptr};
 
   // Set when a file is chosen; used by SdfUriRewriter.
   private: QString modelDir_;

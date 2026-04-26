@@ -51,6 +51,8 @@ set(PLUGIN_SOURCES
   src/PreviewController.cpp
   src/GzSpawnClient.cpp
   src/SdfPreflightChecker.cpp
+  src/Ros2RuntimeAnalyzer.cpp
+  src/LaunchGenerator.cpp
 )
 
 # Headers that carry Q_OBJECT must be listed for AUTOMOC with CMP0100 NEW.
