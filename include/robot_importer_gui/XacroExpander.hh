@@ -1,6 +1,7 @@
 #ifndef ROBOT_IMPORTER_GUI_XACRO_EXPANDER_HH_
 #define ROBOT_IMPORTER_GUI_XACRO_EXPANDER_HH_
 
+#include <QMap>
 #include <QObject>
 #include <QString>
 #include <QStringList>
@@ -29,6 +30,11 @@ class XacroExpander : public QObject
 
   /// Abort any running expansion.
   public: void cancel();
+
+  /// Parse <xacro:arg> declarations from a XACRO file without running xacro.
+  /// Returns a map of arg name → default value.
+  /// Args declared without a default attribute are mapped to an empty string.
+  static QMap<QString, QString> discoverArgs(const QString &_xacroPath);
 
   signals: void expandComplete(const QString &urdfContent);
   signals: void expandFailed(const QString &errorSummary,

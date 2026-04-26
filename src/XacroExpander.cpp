@@ -1,6 +1,10 @@
 #include "robot_importer_gui/XacroExpander.hh"
 
+#include <QFile>
+#include <QMap>
 #include <QProcess>
+#include <QString>
+#include <tinyxml2.h>
 
 namespace robot_importer_gui
 {
@@ -33,6 +37,58 @@ void XacroExpander::cancel()
 {
   if (proc_->state() != QProcess::NotRunning)
     proc_->kill();
+}
+
+// ============================================================
+// discoverArgs — parse <xacro:arg> declarations from a XACRO file.
+//
+// XACRO allows any namespace prefix for the xacro namespace, but in practice
+// "xacro" is the universal convention. We match on local name "arg" in any
+// element whose prefix is "xacro" (i.e. "xacro:arg").
+//
+// Format: <xacro:arg name="prefix" default=""/>
+// If `default` attribute is absent the arg is required; we map it to "".
+// ============================================================
+// static
+QMap<QString, QString> XacroExpander::discoverArgs(const QString &_xacroPath)
+{
+  QMap<QString, QString> result;
+
+  QFile f(_xacroPath);
+  if (!f.open(QIODevice::ReadOnly))
+    return result;
+
+  const QByteArray data = f.readAll();
+  f.close();
+
+  tinyxml2::XMLDocument doc;
+  // Use XML_SUCCESS only — silently return empty map on malformed input.
+  if (doc.Parse(data.constData(), data.size()) != tinyxml2::XML_SUCCESS)
+    return result;
+
+  // Depth-first walk: collect every element whose Name() is "xacro:arg".
+  std::function<void(tinyxml2::XMLElement *)> walk =
+      [&](tinyxml2::XMLElement *el)
+  {
+    if (!el) return;
+
+    if (std::string(el->Name()) == "xacro:arg")
+    {
+      const char *nameAttr = el->Attribute("name");
+      if (nameAttr && *nameAttr)
+      {
+        const char *defAttr = el->Attribute("default");
+        result.insert(QString::fromUtf8(nameAttr),
+                      defAttr ? QString::fromUtf8(defAttr) : QString());
+      }
+    }
+
+    for (auto *c = el->FirstChildElement(); c; c = c->NextSiblingElement())
+      walk(c);
+  };
+  walk(doc.RootElement());
+
+  return result;
 }
 
 void XacroExpander::onProcessFinished(int exitCode, QProcess::ExitStatus status)

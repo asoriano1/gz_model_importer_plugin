@@ -16,6 +16,7 @@
 #include "robot_importer_gui/FileSelector.hh"
 #include "robot_importer_gui/LaunchGenerator.hh"
 #include "robot_importer_gui/ModelLoader.hh"
+#include "robot_importer_gui/XacroExpander.hh"
 #include "robot_importer_gui/PreviewController.hh"
 #include "robot_importer_gui/GzSpawnClient.hh"
 #include "robot_importer_gui/InstanceRewriter.hh"
@@ -711,7 +712,41 @@ void ImporterBackend::startFileLoad(const QString &path, FileFormat format)
            ? ImporterState::Expanding
            : ImporterState::Converting);
 
-  modelLoader_->load(path, format, xacroArgs_);
+  QStringList effectiveArgs = xacroArgs_;
+
+  if (format == FileFormat::Xacro)
+  {
+    // Auto-discover <xacro:arg> declarations and build a baseline arg list.
+    // Priority: user-supplied args override file defaults; args without any
+    // default are passed as empty string so xacro does not abort on them.
+    const QMap<QString, QString> discovered = XacroExpander::discoverArgs(path);
+    if (!discovered.isEmpty())
+    {
+      // Build a set of arg names the user already supplied.
+      QSet<QString> userArgNames;
+      for (const QString &a : xacroArgs_)
+      {
+        const int sep = a.indexOf(QStringLiteral(":="));
+        if (sep > 0)
+          userArgNames.insert(a.left(sep));
+      }
+
+      // Append defaults for every discovered arg not already in user list.
+      for (auto it = discovered.cbegin(); it != discovered.cend(); ++it)
+      {
+        if (!userArgNames.contains(it.key()))
+          effectiveArgs << (it.key() + QStringLiteral(":=") + it.value());
+      }
+
+      gzmsg << "[robot_importer_gui] XACRO args discovered: "
+            << discovered.size() << ", effective arg list:";
+      for (const QString &a : effectiveArgs)
+        gzmsg << " [" << a.toStdString() << "]";
+      gzmsg << "\n";
+    }
+  }
+
+  modelLoader_->load(path, format, effectiveArgs);
 }
 
 // static
