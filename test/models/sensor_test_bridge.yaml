@@ -1,18 +1,13 @@
 # ros_gz_bridge configuration for sensor_test_robot.
 #
-# Usage (replace <namespace> with the value of the 'namespace' xacro:arg,
-# default is "sensor_test"):
+# Use bridge_node (not parameter_bridge — that one only accepts CLI args):
 #
-#   ros2 run ros_gz_bridge parameter_bridge \
-#     --ros-args -p config_file:=<path>/sensor_test_bridge.yaml
-#
-# Or with launch:
-#   ros2 launch ros_gz_bridge ros_gz_bridge.launch.py \
-#     config_file:=<path>/sensor_test_bridge.yaml
+#   ros2 run ros_gz_bridge bridge_node \
+#     --ros-args -p config_file:=$(pwd)/sensor_test_bridge.yaml
 #
 # Verification:
-#   ros2 topic hz /sensor_test/imu/data_raw   # expect ~100 Hz
-#   ros2 topic hz /sensor_test/scan           # expect ~10 Hz
+#   ros2 topic hz /sensor_test/imu/data_raw      # expect ~100 Hz
+#   ros2 topic hz /sensor_test/scan              # expect ~10 Hz
 #   ros2 topic hz /sensor_test/camera/image_raw  # expect ~30 Hz
 
 - ros_topic_name: "/sensor_test/imu/data_raw"

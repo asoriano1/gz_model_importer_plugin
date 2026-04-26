@@ -7,9 +7,8 @@
        - gz_frame_id / topic configuration for ros_gz_bridge
 
      After final import, start the bridge with:
-       ros2 launch ros_gz_bridge ros_gz_bridge.launch.py \
-         bridge_name:=sensor_test_bridge \
-         config_file:=$(find robot_importer_gui)/test/models/sensor_test_bridge.yaml
+       ros2 run ros_gz_bridge bridge_node \
+         --ros-args -p config_file:=<path>/sensor_test_bridge.yaml
 
      Then verify:
        ros2 topic hz /<namespace>/imu/data    # ~100 Hz

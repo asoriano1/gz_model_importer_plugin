@@ -70,8 +70,9 @@ No sensor topics should be published during preview (plugins stripped).
 
 **After final import — start the bridge:**
 ```bash
-ros2 run ros_gz_bridge parameter_bridge \
-  --ros-args -p config_file:=<path>/sensor_test_bridge.yaml
+# bridge_node accepts a config file; parameter_bridge only takes CLI args
+ros2 run ros_gz_bridge bridge_node \
+  --ros-args -p config_file:=$(pwd)/sensor_test_bridge.yaml
 ```
 
 **Verify sensor topics:**
