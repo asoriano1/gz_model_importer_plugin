@@ -577,13 +577,15 @@ Rectangle {
         // ---- Section 7: ROS 2 runtime advisory (non-blocking) ----
         Rectangle {
           id: runtimeCard
-          visible: backend.runtimeWarning.length > 0
+          visible: backend.runtimeRequired
           Layout.fillWidth: true
           implicitHeight: runtimeCol.implicitHeight + 16
-          color: "#fff3e0"
-          border.color: "#fb8c00"; border.width: 1
+          color: backend.hasUnresolvedRuntimeItems ? "#fce4ec" : "#fff3e0"
+          border.color: backend.hasUnresolvedRuntimeItems ? "#e53935" : "#fb8c00"
+          border.width: 1
           radius: 4
 
+          property bool detailsExpanded: false
           property bool runExpanded: false
 
           ColumnLayout {
@@ -594,23 +596,125 @@ Rectangle {
             }
             spacing: 4
 
-            Label {
-              text: "ROS 2 runtime likely required"
-              font.bold: true; font.pixelSize: 12; color: "#e65100"
+            // Header row: icon + summary + status dot
+            RowLayout {
+              Layout.fillWidth: true; spacing: 6
+
+              Label {
+                text: "⚠ ROS 2 runtime required"
+                font.bold: true; font.pixelSize: 12
+                color: backend.hasUnresolvedRuntimeItems ? "#b71c1c" : "#e65100"
+              }
+
+              Item { Layout.fillWidth: true }
+
+              // Process status dot
+              Rectangle {
+                visible: backend.runtimeRunning ||
+                         backend.runtimeStatus === "Stopped" ||
+                         backend.runtimeStatus === "Failed" ||
+                         backend.runtimeStatus === "Executable not found"
+                width: 8; height: 8; radius: 4
+                color: {
+                  if (backend.runtimeRunning)        return "#2e7d32"
+                  if (backend.runtimeStatus === "Failed" ||
+                      backend.runtimeStatus === "Executable not found") return "#c62828"
+                  return "#9e9e9e"
+                }
+              }
+              Label {
+                visible: backend.runtimeRunning ||
+                         backend.runtimeStatus === "Stopped" ||
+                         backend.runtimeStatus === "Failed" ||
+                         backend.runtimeStatus === "Executable not found"
+                text: backend.runtimeStatus
+                font.pixelSize: 10; color: "#757575"
+              }
             }
 
+            // Summary line
             Label {
-              text: backend.runtimeWarning
-              font.pixelSize: 11; color: "#bf360c"
+              text: backend.runtimeSummary
+              font.pixelSize: 11; color: "#bf360c"; font.bold: true
+              wrapMode: Text.Wrap; Layout.fillWidth: true
+              visible: backend.runtimeSummary.length > 0
+            }
+
+            // Unresolved items warning
+            Label {
+              visible: backend.hasUnresolvedRuntimeItems
+              text: "Some bridge topics could not be inferred — review the generated command."
+              font.pixelSize: 10; font.italic: true; color: "#b71c1c"
               wrapMode: Text.Wrap; Layout.fillWidth: true
             }
 
+            // Details toggle (shows full runtimeWarning text)
+            Item {
+              Layout.fillWidth: true
+              implicitHeight: detailsToggle.implicitHeight + 2
+              visible: backend.runtimeWarning.length > 0
+
+              Label {
+                id: detailsToggle
+                anchors.verticalCenter: parent.verticalCenter
+                text: (runtimeCard.detailsExpanded ? "▼" : "▶") + "  Details"
+                font.pixelSize: 11; color: "#555"
+              }
+              MouseArea {
+                anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                onClicked: runtimeCard.detailsExpanded = !runtimeCard.detailsExpanded
+              }
+            }
+
+            // Details content
+            Rectangle {
+              visible: runtimeCard.detailsExpanded && backend.runtimeWarning.length > 0
+              Layout.fillWidth: true
+              implicitHeight: detailsLabel.implicitHeight + 8
+              color: "#fff8e1"; radius: 3
+              border.color: "#ffe082"; border.width: 1
+
+              Label {
+                id: detailsLabel
+                anchors { left: parent.left; right: parent.right; top: parent.top; margins: 4 }
+                text: backend.runtimeWarning
+                font.pixelSize: 10; font.family: "monospace"
+                color: "#4e342e"; wrapMode: Text.Wrap
+              }
+            }
+
+            // Bridge command preview (only when bridge is available)
+            Rectangle {
+              visible: backend.hasBridgeRequirements && backend.bridgeCommand.length > 0
+              Layout.fillWidth: true
+              implicitHeight: bridgeCmdLabel.implicitHeight + 8
+              color: "#e8f5e9"; radius: 3
+              border.color: "#66bb6a"; border.width: 1
+
+              Label {
+                id: bridgeCmdLabel
+                anchors { left: parent.left; right: parent.right; top: parent.top; margins: 4 }
+                text: backend.bridgeCommand
+                font.pixelSize: 10; font.family: "monospace"
+                color: "#1b5e20"; wrapMode: Text.Wrap
+              }
+            }
+
+            // Action buttons
             RowLayout {
               spacing: 6; Layout.fillWidth: true
 
               Button {
-                text: "Copy command"
-                font.pixelSize: 11; implicitWidth: 110
+                text: "Copy bridge"
+                font.pixelSize: 11; implicitWidth: 90
+                visible: backend.hasBridgeRequirements
+                onClicked: backend.copyLaunchCommand()
+              }
+
+              Button {
+                text: "Copy cmd"
+                font.pixelSize: 11; implicitWidth: 80
+                visible: !backend.hasBridgeRequirements
                 onClicked: backend.copyLaunchCommand()
               }
 
@@ -644,7 +748,6 @@ Rectangle {
                 Layout.fillWidth: true
                 onEditingFinished: backend.setCustomLaunchCommand(text)
 
-                // Sync when the backend re-generates the command (new file).
                 Connections {
                   target: backend
                   function onCustomLaunchCommandChanged() {
@@ -660,17 +763,25 @@ Rectangle {
                 spacing: 6
 
                 Button {
-                  text: backend.launchRunning ? "Stop" : "Run"
+                  text: backend.runtimeRunning ? "Stop" : "Run"
                   font.pixelSize: 11; implicitWidth: 60
-                  onClicked: backend.launchRunning
+                  onClicked: backend.runtimeRunning
                              ? backend.stopLaunchCommand()
                              : backend.runLaunchCommand()
                 }
 
                 Label {
-                  visible: backend.launchRunning
+                  visible: backend.runtimeRunning
                   text: "● Running"
                   font.pixelSize: 11; color: "#2e7d32"; font.bold: true
+                }
+
+                Label {
+                  visible: !backend.runtimeRunning &&
+                           (backend.runtimeStatus === "Failed" ||
+                            backend.runtimeStatus === "Executable not found")
+                  text: "✗ " + backend.runtimeStatus
+                  font.pixelSize: 11; color: "#c62828"
                 }
               }
             }
