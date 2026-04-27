@@ -19,42 +19,26 @@ enum class PluginClass { Ros2Control, Sensor, OtherRos, Unrelated };
 
 static PluginClass classifyFilename(const QString &fn)
 {
-  // Normalise: lower-case, strip lib prefix and .so suffix for matching.
   QString s = fn.toLower();
   if (s.startsWith(QLatin1String("lib"))) s = s.mid(3);
   if (s.endsWith(QLatin1String(".so")))   s.chop(3);
 
-  // --- ros2_control ---------------------------------------------------------
   static const QStringList kControl = {
-    "gz_ros2_control",
-    "gazebo_ros2_control",
-    "gazebo_ros_control",      // older Gazebo Classic naming
+    "gz_ros2_control", "gazebo_ros2_control", "gazebo_ros_control",
   };
   for (const QString &k : kControl)
     if (s.contains(k)) return PluginClass::Ros2Control;
 
-  // --- sensor plugins with ROS topics ---------------------------------------
-  // These publish data directly to ROS topics from within Gazebo.
   static const QStringList kSensor = {
-    "gazebo_ros_camera",
-    "gazebo_ros_depth_camera",
-    "gazebo_ros_imu_sensor",
-    "gazebo_ros_ray_sensor",
-    "gazebo_ros_laser",
-    "gazebo_ros_lidar",
-    "gazebo_ros_gps",
-    "gazebo_ros_p3d",
-    "gazebo_ros_joint_state",
-    "gazebo_ros_range",
-    "gazebo_ros_bumper",
-    "gz_ros_camera",
-    "gz_ros_imu",
-    "gz_ros_depth_camera",
+    "gazebo_ros_camera", "gazebo_ros_depth_camera", "gazebo_ros_imu_sensor",
+    "gazebo_ros_ray_sensor", "gazebo_ros_laser", "gazebo_ros_lidar",
+    "gazebo_ros_gps", "gazebo_ros_p3d", "gazebo_ros_joint_state",
+    "gazebo_ros_range", "gazebo_ros_bumper",
+    "gz_ros_camera", "gz_ros_imu", "gz_ros_depth_camera",
   };
   for (const QString &k : kSensor)
     if (s.contains(k)) return PluginClass::Sensor;
 
-  // --- general gazebo_ros / gz_ros plugins -----------------------------------
   if (s.startsWith(QLatin1String("gazebo_ros")) ||
       s.startsWith(QLatin1String("gz_ros")))
     return PluginClass::OtherRos;
@@ -62,26 +46,81 @@ static PluginClass classifyFilename(const QString &fn)
   return PluginClass::Unrelated;
 }
 
+// ---- Sensor type → bridge mapping ------------------------------------------
+
+struct SensorBridgeMapping
+{
+  const char *sensorType;
+  const char *gzMsgType;
+  const char *rosMsgType;
+  const char *topicSuffix; ///< default Gazebo topic suffix for this sensor type
+};
+
+// Gazebo Sim Harmonic default topic suffixes for native sensors.
+// Inferred topic: /model/<model>/link/<link>/sensor/<sensor>/<suffix>
+static const SensorBridgeMapping kBridgeMap[] = {
+  {"camera",       "gz.msgs.Image",        "sensor_msgs/msg/Image",            "/image"},
+  {"depth_camera", "gz.msgs.Image",        "sensor_msgs/msg/Image",            "/image"},
+  {"rgbd_camera",  "gz.msgs.Image",        "sensor_msgs/msg/Image",            "/image"},
+  {"gpu_lidar",    "gz.msgs.LaserScan",    "sensor_msgs/msg/LaserScan",        "/scan"},
+  {"lidar",        "gz.msgs.LaserScan",    "sensor_msgs/msg/LaserScan",        "/scan"},
+  {"ray",          "gz.msgs.LaserScan",    "sensor_msgs/msg/LaserScan",        "/scan"},
+  {"imu",          "gz.msgs.IMU",          "sensor_msgs/msg/Imu",              "/imu"},
+  {"navsat",       "gz.msgs.NavSat",       "sensor_msgs/msg/NavSatFix",        "/navsat"},
+  {"gps",          "gz.msgs.NavSat",       "sensor_msgs/msg/NavSatFix",        "/navsat"},
+  {"contact",      "gz.msgs.Contacts",     "ros_gz_interfaces/msg/Contacts",   "/contacts"},
+  {"altimeter",    "gz.msgs.Altimeter",    "ros_gz_interfaces/msg/Altimeter",  "/altitude"},
+  {"magnetometer", "gz.msgs.Magnetometer", "sensor_msgs/msg/MagneticField",    "/magnetometer"},
+  {"air_pressure", "gz.msgs.FluidPressure","sensor_msgs/msg/FluidPressure",    "/air_pressure"},
+  {"odometer",     "gz.msgs.Odometry",     "nav_msgs/msg/Odometry",            "/odometry"},
+};
+
+static const SensorBridgeMapping *findBridgeMapping(const QString &sensorType)
+{
+  const std::string st = sensorType.toLower().toStdString();
+  for (const auto &m : kBridgeMap)
+    if (st == m.sensorType) return &m;
+  return nullptr;
+}
+
+// ---- Check whether a sensor element has a ROS plugin child -----------------
+
+static bool sensorHasRosPlugin(const tinyxml2::XMLElement *sensorEl)
+{
+  for (const auto *child = sensorEl->FirstChildElement("plugin");
+       child;
+       child = child->NextSiblingElement("plugin"))
+  {
+    const char *fn = child->Attribute("filename");
+    if (fn && classifyFilename(QString::fromUtf8(fn)) != PluginClass::Unrelated)
+      return true;
+  }
+  return false;
+}
+
 // ---- SDF tree walker -------------------------------------------------------
 
 struct Collector
 {
-  QSet<QString> seenPlugins;   // dedup by filename
+  QSet<QString> seenPlugins;
 
   bool hasRos2Control{false};
   bool hasSensorPlugins{false};
   bool hasOtherRosPlugins{false};
-  bool hasRos2ControlElement{false};  // from <ros2_control> XML element
+  bool hasRos2ControlElement{false};
 
   QList<RuntimeRequirement> requirements;
+  QList<SensorFindings>     sensors;
 
-  void walk(const tinyxml2::XMLElement *el)
+  // Context tracked while walking the tree.
+  QString currentModel_;
+  QString currentLink_;
+
+  void walkPlugins(const tinyxml2::XMLElement *el)
   {
     if (!el) return;
-
     const std::string name = el->Name();
 
-    // <plugin filename="..."> --------------------------------------------------
     if (name == "plugin")
     {
       const char *fn = el->Attribute("filename");
@@ -93,10 +132,8 @@ struct Collector
         if (cls != PluginClass::Unrelated && !seenPlugins.contains(filename))
         {
           seenPlugins.insert(filename);
-
           RuntimeRequirement req;
           req.pluginFilename = filename;
-
           switch (cls)
           {
             case PluginClass::Ros2Control:
@@ -119,8 +156,7 @@ struct Collector
           requirements.append(req);
         }
 
-        // A <ros> child inside any plugin also signals ROS topic integration,
-        // even if the filename wasn't matched above (custom plugin names).
+        // A <ros> child inside a custom plugin also signals ROS integration.
         if (el->FirstChildElement("ros") && !seenPlugins.contains(filename))
         {
           seenPlugins.insert(filename);
@@ -134,15 +170,11 @@ struct Collector
       }
     }
 
-    // <ros2_control> element --------------------------------------------------
-    // This element appears in URDF and may survive into the converted SDF.
     if (name == "ros2_control")
     {
-      hasRos2Control          = true;
-      hasRos2ControlElement   = true;
-      // Don't add a duplicate requirement here; the plugin entry above covers it.
-      // Only add if no plugin entry was found yet.
-      if (!hasRos2Control || requirements.isEmpty())
+      hasRos2Control        = true;
+      hasRos2ControlElement = true;
+      if (requirements.isEmpty())
       {
         RuntimeRequirement req;
         req.kind           = RuntimeRequirement::Kind::Ros2Control;
@@ -151,52 +183,145 @@ struct Collector
         requirements.append(req);
       }
     }
+  }
 
-    // Recurse.
+  void walkSensors(const tinyxml2::XMLElement *el)
+  {
+    if (!el) return;
+    const std::string name = el->Name();
+
+    if (name == "sensor")
+    {
+      const char *stype = el->Attribute("type");
+      const char *sname = el->Attribute("name");
+      if (!stype || !*stype) return;
+
+      SensorFindings sf;
+      sf.modelName  = currentModel_;
+      sf.linkName   = currentLink_;
+      sf.sensorType = QString::fromUtf8(stype).toLower();
+      sf.sensorName = sname ? QString::fromUtf8(sname) : QString{};
+
+      // Explicit <topic>
+      if (const auto *tEl = el->FirstChildElement("topic"))
+      {
+        const char *t = tEl->GetText();
+        if (t && *t)
+          sf.explicitTopic = QString::fromUtf8(t).trimmed();
+      }
+
+      // <update_rate>
+      if (const auto *rEl = el->FirstChildElement("update_rate"))
+      {
+        const char *r = rEl->GetText();
+        if (r && *r) sf.updateRate = std::stod(r);
+      }
+
+      sf.hasRosPlugin = sensorHasRosPlugin(el);
+
+      // Decide whether a bridge is needed and build the spec.
+      const SensorBridgeMapping *mapping = findBridgeMapping(sf.sensorType);
+      if (mapping && !sf.hasRosPlugin)
+      {
+        sf.needsBridge = true;
+
+        BridgeSpec bs;
+        bs.gzMsgType  = QString::fromUtf8(mapping->gzMsgType);
+        bs.rosMsgType = QString::fromUtf8(mapping->rosMsgType);
+        bs.direction  = "[";  // gz → ros
+
+        if (!sf.explicitTopic.isEmpty())
+        {
+          bs.gazeboTopic = sf.explicitTopic;
+          bs.rosTopic    = sf.explicitTopic;
+          bs.confidence  = QStringLiteral("explicit");
+        }
+        else if (!sf.modelName.isEmpty() && !sf.sensorName.isEmpty())
+        {
+          // Standard Gazebo Sim Harmonic naming convention.
+          QString topic = QStringLiteral("/model/%1").arg(sf.modelName);
+          if (!sf.linkName.isEmpty())
+            topic += QStringLiteral("/link/%1").arg(sf.linkName);
+          topic += QStringLiteral("/sensor/%1%2")
+              .arg(sf.sensorName, QString::fromUtf8(mapping->topicSuffix));
+          bs.gazeboTopic = topic;
+          bs.rosTopic    = topic;
+          bs.confidence  = QStringLiteral("inferred");
+        }
+        else
+        {
+          bs.gazeboTopic = QStringLiteral("<topic_unknown>");
+          bs.rosTopic    = QStringLiteral("<topic_unknown>");
+          bs.confidence  = QStringLiteral("manual_review");
+        }
+
+        sf.bridge = bs;
+      }
+      else if (!mapping)
+      {
+        // Unknown sensor type — user needs to inspect manually.
+        sf.needsBridge = false;
+      }
+
+      sensors.append(sf);
+      return;  // don't recurse into sensor children for context tracking
+    }
+
+    // Track model / link context.
+    QString prevModel = currentModel_;
+    QString prevLink  = currentLink_;
+
+    if (name == "model")
+    {
+      const char *mn = el->Attribute("name");
+      if (mn && *mn) currentModel_ = QString::fromUtf8(mn);
+      currentLink_.clear();
+    }
+    if (name == "link")
+    {
+      const char *ln = el->Attribute("name");
+      if (ln && *ln) currentLink_ = QString::fromUtf8(ln);
+    }
+
+    walkPlugins(el);
+
     for (const auto *child = el->FirstChildElement();
          child;
          child = child->NextSiblingElement())
-      walk(child);
+    {
+      walkSensors(child);
+    }
+
+    currentModel_ = prevModel;
+    currentLink_  = prevLink;
   }
 };
 
 // ---- XACRO arg scanner ----------------------------------------------------
-// Reads the raw XACRO source (before expansion) and collects arg names that
-// indicate control or simulation integration intent.
 
 static QStringList scanXacroControlArgs(const QString &path)
 {
   if (path.isEmpty()) return {};
-
-  // Only worth reading .xacro files.
   if (!path.endsWith(QLatin1String(".xacro"), Qt::CaseInsensitive) &&
       !path.endsWith(QLatin1String(".urdf.xacro"), Qt::CaseInsensitive))
     return {};
 
   QFile f(path);
-  if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
-    return {};
+  if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) return {};
 
   tinyxml2::XMLDocument doc;
   const QByteArray raw = f.readAll();
-  if (doc.Parse(raw.constData(), raw.size()) != tinyxml2::XML_SUCCESS)
-    return {};
+  if (doc.Parse(raw.constData(), raw.size()) != tinyxml2::XML_SUCCESS) return {};
 
-  // Control-related arg name keywords.
   static const QStringList kKeywords = {
-    "ros2_control", "use_ros2_control", "use_control",
-    "use_sim", "use_simulation",
+    "ros2_control", "use_ros2_control", "use_control", "use_sim", "use_simulation",
   };
 
   QStringList found;
-
-  // Walk looking for <xacro:arg name="..."> elements.
   std::function<void(const tinyxml2::XMLElement *)> walk;
   walk = [&](const tinyxml2::XMLElement *el)
   {
     if (!el) return;
-
-    // xacro:arg appears as element name "xacro:arg" in the raw XML.
     const std::string ename = el->Name();
     if (ename == "xacro:arg")
     {
@@ -209,15 +334,45 @@ static QStringList scanXacroControlArgs(const QString &path)
           { found.append(qn); break; }
       }
     }
-
-    for (const auto *child = el->FirstChildElement();
-         child;
-         child = child->NextSiblingElement())
+    for (const auto *child = el->FirstChildElement(); child; child = child->NextSiblingElement())
       walk(child);
   };
   walk(doc.RootElement());
-
   return found;
+}
+
+// ---- Summary string generation ---------------------------------------------
+
+static QString buildSummary(const RuntimeFindings &f)
+{
+  QStringList parts;
+
+  const int bridgeCount = [&]{
+    int n = 0;
+    for (const auto &s : f.sensors)
+      if (s.needsBridge) ++n;
+    return n;
+  }();
+  if (bridgeCount > 0)
+    parts << QStringLiteral("%1 sensor bridge%2").arg(bridgeCount).arg(bridgeCount > 1 ? "s" : "");
+
+  if (f.hasRos2Control)
+    parts << QStringLiteral("ros2_control");
+
+  const int otherRos = [&]{
+    int n = 0;
+    for (const auto &r : f.requirements)
+      if (r.kind == RuntimeRequirement::Kind::SensorPlugin ||
+          r.kind == RuntimeRequirement::Kind::OtherRos) ++n;
+    return n;
+  }();
+  if (otherRos > 0)
+    parts << QStringLiteral("%1 ROS plugin%2").arg(otherRos).arg(otherRos > 1 ? "s" : "");
+
+  if (f.hasXacroControlArgs && !f.hasRos2Control)
+    parts << QStringLiteral("xacro control args");
+
+  return parts.join(QStringLiteral(" · "));
 }
 
 }  // namespace
@@ -228,7 +383,6 @@ RuntimeFindings Ros2RuntimeAnalyzer::analyze(const QString &_sdfXml,
 {
   RuntimeFindings findings;
 
-  // --- SDF analysis ---------------------------------------------------------
   if (!_sdfXml.isEmpty())
   {
     tinyxml2::XMLDocument doc;
@@ -236,27 +390,36 @@ RuntimeFindings Ros2RuntimeAnalyzer::analyze(const QString &_sdfXml,
     if (doc.Parse(utf8.constData(), utf8.size()) == tinyxml2::XML_SUCCESS)
     {
       Collector col;
-      col.walk(doc.RootElement());
+      col.walkSensors(doc.RootElement());
 
-      findings.hasRos2Control    = col.hasRos2Control;
-      findings.hasSensorPlugins  = col.hasSensorPlugins;
+      findings.hasRos2Control     = col.hasRos2Control;
+      findings.hasSensorPlugins   = col.hasSensorPlugins;
       findings.hasOtherRosPlugins = col.hasOtherRosPlugins;
-      findings.requirements      = col.requirements;
+      findings.requirements       = col.requirements;
+      findings.sensors            = col.sensors;
+
       for (const RuntimeRequirement &r : col.requirements)
         findings.pluginList.append(r.label);
+
+      findings.hasNativeSensors = !col.sensors.isEmpty();
+
+      for (const SensorFindings &s : col.sensors)
+      {
+        if (s.needsBridge)
+          findings.hasBridgeRequirements = true;
+        if (s.needsBridge && s.bridge.confidence == QLatin1String("manual_review"))
+          findings.hasUnresolvedRuntimeItems = true;
+      }
     }
   }
 
-  // --- XACRO arg scan (original source file) --------------------------------
   const QStringList xacroArgs = scanXacroControlArgs(_originalPath);
   if (!xacroArgs.isEmpty())
   {
     findings.hasXacroControlArgs = true;
     findings.xacroControlArgs    = xacroArgs;
-    // A XACRO with use_ros2_control / use_sim args very likely needs control nodes.
     if (!findings.hasRos2Control)
     {
-      // Promote as ros2_control hint only if the arg names explicitly say so.
       for (const QString &a : xacroArgs)
         if (a.contains(QLatin1String("ros2_control")) ||
             a.contains(QLatin1String("use_control")))
@@ -265,9 +428,12 @@ RuntimeFindings Ros2RuntimeAnalyzer::analyze(const QString &_sdfXml,
   }
 
   findings.needsRuntime =
-      findings.hasRos2Control   ||
-      findings.hasSensorPlugins ||
-      findings.hasOtherRosPlugins;
+      findings.hasRos2Control    ||
+      findings.hasSensorPlugins  ||
+      findings.hasOtherRosPlugins ||
+      findings.hasNativeSensors;
+
+  findings.summary = buildSummary(findings);
 
   return findings;
 }
