@@ -129,13 +129,25 @@ Rectangle {
   }
 
   // Auto-expand the log section when diagnostics become available.
+  // Also auto-scroll so newly visible sections are reachable.
   Connections {
     target: backend
 
-    // Expand on error-state transitions (SpawnFailed, PreviewFailed, etc.)
     function onStateChanged() {
+      var s = backend.stateName
+      // Expand logs on error transitions.
       if (root.isErrorState && root.hasLogs)
         logsCard.logsExpanded = true
+      // Scroll to bottom when the options / runtime sections appear so the
+      // user can see the Import button without manually scrolling.
+      // Qt.callLater defers until the layout pass has settled.
+      if (s === "Configuring" || s === "Done")
+        Qt.callLater(function() {
+          var sb = mainScrollView.ScrollBar.vertical
+          sb.position = Math.max(0, 1.0 - sb.size)
+        })
+      else if (s === "Idle")
+        mainScrollView.ScrollBar.vertical.position = 0
     }
 
     // Also expand when an error is set without a state transition — e.g. when
@@ -149,14 +161,18 @@ Rectangle {
 
   // ================================================================
   ScrollView {
+    id: mainScrollView
     anchors.fill: parent
     contentWidth: availableWidth
+    // Explicit contentHeight is required: Qt cannot derive it automatically
+    // from a ColumnLayout nested inside an Item inside a ScrollView.
+    contentHeight: mainCol.implicitHeight + 20
     clip: true
     ScrollBar.vertical.policy: ScrollBar.AsNeeded
 
     Item {
       width:  root.width
-      height: mainCol.implicitHeight + 16
+      height: mainScrollView.contentHeight
 
       ColumnLayout {
         id: mainCol
