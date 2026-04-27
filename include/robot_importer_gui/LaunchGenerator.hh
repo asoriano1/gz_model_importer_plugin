@@ -12,15 +12,18 @@ namespace robot_importer_gui
 /// RuntimeFindings.  All methods are stateless (static).
 struct LaunchGenerator
 {
+  /// Returns a one-line ros_gz_bridge parameter_bridge command covering all
+  /// inferred sensor bridges.  Returns empty string if there are no bridge specs.
+  static QString bridgeCommand(const RuntimeFindings &findings,
+                               const QString &rosNamespace = {});
+
   /// Returns a Python ROS 2 launch file as a QString.
-  /// The file is a starting point — the user must adjust controller names,
-  /// robot_description source, and namespace remappings for their robot.
   static QString launchFileContent(const RuntimeFindings &findings,
                                    const QString &instanceName,
                                    const QString &rosNamespace);
 
   /// Returns a minimal one-liner CLI command to start the required nodes.
-  /// Suitable for pasting into a terminal or populating the Run field.
+  /// Prefers bridgeCommand() when bridges are available.
   static QString launchCommand(const RuntimeFindings &findings,
                                const QString &instanceName,
                                const QString &rosNamespace);
