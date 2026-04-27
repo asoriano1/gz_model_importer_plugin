@@ -25,8 +25,7 @@ bool RuntimeProcessManager::run(const QString &command)
 {
   if (status_ == Status::Running) return false;
 
-  const QStringList parts = command.split(' ', Qt::SkipEmptyParts);
-  if (parts.isEmpty()) return false;
+  if (command.trimmed().isEmpty()) return false;
 
   delete process_;
   process_ = new QProcess(this);
@@ -42,7 +41,9 @@ bool RuntimeProcessManager::run(const QString &command)
   connect(process_, &QProcess::readyReadStandardError,
           this, &RuntimeProcessManager::onReadyRead);
 
-  process_->start(parts.first(), parts.mid(1));
+  // Run via bash so that shell quoting, line continuations (\\\n), and
+  // special characters in topic specs are handled correctly.
+  process_->start(QStringLiteral("/bin/bash"), {QStringLiteral("-c"), command});
   if (!process_->waitForStarted(2000))
   {
     gzwarn << "[robot_importer_gui] Failed to start: " << command.toStdString() << "\n";
@@ -118,6 +119,7 @@ void RuntimeProcessManager::onReadyRead()
   if (!errData.isEmpty()) output_ += QString::fromUtf8(errData);
   if (output_.size() > 4096)
     output_ = output_.right(4096);
+  emit outputChanged();
 }
 
 void RuntimeProcessManager::setStatus(Status s)

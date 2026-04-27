@@ -67,6 +67,8 @@ ImporterBackend::ImporterBackend(QObject *_parent)
 
   connect(processManager_.get(), &RuntimeProcessManager::statusChanged,
           this, &ImporterBackend::runtimeRunningChanged);
+  connect(processManager_.get(), &RuntimeProcessManager::outputChanged,
+          this, &ImporterBackend::runtimeOutputChanged);
 
   poseDebounceTimer_ = new QTimer(this);
   poseDebounceTimer_->setSingleShot(true);
@@ -677,6 +679,7 @@ bool    ImporterBackend::hasUnresolvedRuntimeItems() const { return hasUnresolve
 
 bool    ImporterBackend::runtimeRunning() const { return processManager_->isRunning(); }
 QString ImporterBackend::runtimeStatus()  const { return processManager_->statusText(); }
+QString ImporterBackend::runtimeOutput()  const { return processManager_->processOutput(); }
 
 void ImporterBackend::setCustomLaunchCommand(const QString &cmd)
 {

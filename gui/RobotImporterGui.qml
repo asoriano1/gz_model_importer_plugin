@@ -784,6 +784,30 @@ Rectangle {
                   font.pixelSize: 11; color: "#c62828"
                 }
               }
+
+              // Process output (shown when there is output and not idle)
+              Rectangle {
+                visible: backend.runtimeOutput.length > 0 &&
+                         backend.runtimeStatus !== "Not started"
+                Layout.fillWidth: true
+                implicitHeight: Math.min(processOutputLabel.implicitHeight + 8, 120)
+                color: "#212121"; radius: 3
+                clip: true
+
+                Flickable {
+                  anchors { fill: parent; margins: 4 }
+                  contentHeight: processOutputLabel.implicitHeight
+                  clip: true
+
+                  Label {
+                    id: processOutputLabel
+                    width: parent.width
+                    text: backend.runtimeOutput
+                    font.pixelSize: 10; font.family: "monospace"
+                    color: "#f5f5f5"; wrapMode: Text.Wrap
+                  }
+                }
+              }
             }
           }
         }

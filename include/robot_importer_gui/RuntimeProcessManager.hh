@@ -48,6 +48,7 @@ public:
 
 signals:
   void statusChanged();
+  void outputChanged();
 
 private slots:
   void onFinished(int exitCode, QProcess::ExitStatus exitStatus);

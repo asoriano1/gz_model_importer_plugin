@@ -62,6 +62,7 @@ class ImporterBackend : public QObject
   Q_PROPERTY(bool    runtimeRunning  READ runtimeRunning  NOTIFY runtimeRunningChanged)
   Q_PROPERTY(bool    launchRunning   READ runtimeRunning  NOTIFY runtimeRunningChanged)  // compat alias
   Q_PROPERTY(QString runtimeStatus   READ runtimeStatus   NOTIFY runtimeRunningChanged)
+  Q_PROPERTY(QString runtimeOutput   READ runtimeOutput   NOTIFY runtimeOutputChanged)
 
   Q_PROPERTY(robot_importer_gui::FileSelector   *fileSelector
              READ fileSelector   CONSTANT)
@@ -94,6 +95,7 @@ class ImporterBackend : public QObject
 
   public: bool    runtimeRunning() const;
   public: QString runtimeStatus()  const;
+  public: QString runtimeOutput()  const;
 
   public: FileSelector      *fileSelector()      const;
   public: ImportOptions     *importOptions()     const;
@@ -119,6 +121,7 @@ class ImporterBackend : public QObject
   signals: void runtimeWarningChanged();
   signals: void customLaunchCommandChanged();
   signals: void runtimeRunningChanged();
+  signals: void runtimeOutputChanged();
 
   // ---- Collaborator slots ----
   private slots:
