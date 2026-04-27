@@ -1,9 +1,32 @@
 #include "robot_importer_gui/RuntimeProcessManager.hh"
 
+#include <signal.h>
+#include <unistd.h>
+
 #include <gz/common/Console.hh>
 
 namespace robot_importer_gui
 {
+
+namespace
+{
+
+// QProcess subclass that places the child in its own process group before exec.
+// This lets us send signals to the entire group (bash + ros2 + parameter_bridge)
+// rather than just the direct child.
+class GroupedProcess : public QProcess
+{
+protected:
+  void setupChildProcess() override { ::setpgid(0, 0); }
+};
+
+static void killGroup(qint64 pid, int sig)
+{
+  if (pid > 0)
+    ::killpg(static_cast<pid_t>(pid), sig);
+}
+
+}  // namespace
 
 RuntimeProcessManager::RuntimeProcessManager(QObject *parent)
 : QObject(parent)
@@ -13,10 +36,11 @@ RuntimeProcessManager::~RuntimeProcessManager()
 {
   if (process_)
   {
-    process_->terminate();
+    const qint64 pid = process_->processId();
+    killGroup(pid, SIGTERM);
     process_->waitForFinished(1500);
     if (process_->state() != QProcess::NotRunning)
-      process_->kill();
+      killGroup(pid, SIGKILL);
     delete process_;
   }
 }
@@ -28,7 +52,8 @@ bool RuntimeProcessManager::run(const QString &command)
   if (command.trimmed().isEmpty()) return false;
 
   delete process_;
-  process_ = new QProcess(this);
+  process_ = new GroupedProcess();
+  process_->setParent(this);
   output_.clear();
 
   connect(process_,
@@ -51,7 +76,8 @@ bool RuntimeProcessManager::run(const QString &command)
     return false;
   }
 
-  gzmsg << "[robot_importer_gui] Process started: " << command.toStdString() << "\n";
+  gzmsg << "[robot_importer_gui] Process started (pgid=" << process_->processId()
+        << "): " << command.toStdString() << "\n";
   setStatus(Status::Running);
   return true;
 }
@@ -60,11 +86,12 @@ void RuntimeProcessManager::stop()
 {
   if (!process_ || status_ != Status::Running) return;
 
-  process_->terminate();
+  const qint64 pid = process_->processId();
+  killGroup(pid, SIGTERM);
   if (!process_->waitForFinished(3000))
-    process_->kill();
+    killGroup(pid, SIGKILL);
 
-  gzmsg << "[robot_importer_gui] Process stopped.\n";
+  gzmsg << "[robot_importer_gui] Process group stopped (pgid=" << pid << ").\n";
   // onFinished will fire and update status.
 }
 

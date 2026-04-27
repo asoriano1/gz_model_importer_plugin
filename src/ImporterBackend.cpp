@@ -448,6 +448,7 @@ void ImporterBackend::onSpawnComplete(const QString &name)
   gzmsg << "[robot_importer_gui] Spawn complete: " << name.toStdString() << "\n";
   lastError_.clear(); lastWarning_.clear(); preflightReport_.clear();
   emit lastErrorChanged(); emit lastWarningChanged(); emit preflightReportChanged();
+  clearRuntimeState();
   setState(ImporterState::Done);
 }
 
