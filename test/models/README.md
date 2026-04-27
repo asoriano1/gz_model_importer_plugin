@@ -131,7 +131,7 @@ URIs: 0/4 resolved — 4 unresolved:
 ```bash
 # Confirm the package is found:
 ros2 pkg prefix robotnik_description
-# Should print: /home/asoriano/workspaces/gazebo_importer/install/robotnik_description
+# Should print: <workspace>/install/robotnik_description
 ```
 
 ---
