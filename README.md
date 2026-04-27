@@ -96,7 +96,7 @@ The `test/` directory contains ready-to-use models for manual validation:
 | `test/worlds/importer_test.sdf` | Walled test world for sensor validation |
 | `test/worlds/robotnik_world.sdf` | Robotnik environment world |
 
-See `demo/VALIDATION_CHECKLIST.md` for the full manual test procedure and `demo/smoke_test.md` for a quick smoke-test protocol.
+See `test/models/README.md` for details on each model and the expected behaviour.
 
 ## Known limitations
 
