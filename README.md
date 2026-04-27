@@ -1,10 +1,14 @@
 # robot_importer_gui
 
-Gazebo Sim (Harmonic) GUI plugin for ROS 2 Jazzy that provides a modal robot importer workflow.
+Gazebo Sim (Harmonic) GUI plugin for ROS 2 Jazzy that provides a modal robot importer workflow — no launch files required.
 
-## Overview
+Load a local robot description, preview it in the active simulation, configure spawn options, and import it into the Gazebo world in a few clicks.
 
-`robot_importer_gui` lets you load a local robot description file, preview it in the active simulation, configure spawn options, and import it into the Gazebo world — without launch files.
+## Demo
+
+![Import workflow](demo.gif)
+
+![Preview and spawn](demo2.gif)
 
 ## Features
 
@@ -76,6 +80,23 @@ Make sure your workspace is sourced (`source install/setup.bash`) so that `ament
 The **Name** field sets the Gazebo entity name and the SDF model name. The **Namespace** field is passed as the ROS namespace to all plugins in the description.
 
 > The importer rewrites the top-level model name and the ROS namespace parameter. It does **not** automatically rewrite hardcoded topic names, service names, or TF frame IDs inside individual plugin configurations. For full isolation between multiple instances of the same robot, ensure your robot description uses namespaced topics and parameterised frame prefixes.
+
+## Test models
+
+The `test/` directory contains ready-to-use models for manual validation:
+
+| File | Purpose |
+|---|---|
+| `test/models/simple_box.urdf` | Minimal URDF, baseline check |
+| `test/models/xacro_with_defaults.urdf.xacro` | XACRO with default arguments |
+| `test/models/xacro_mixed_args.urdf.xacro` | XACRO requiring explicit arguments |
+| `test/models/minimal_sdf.sdf` | Minimal SDF entrypoint |
+| `test/models/sensor_test_robot.urdf.xacro` | Multi-sensor robot (IMU, LiDAR, camera) |
+| `test/models/mesh_uri_test.urdf.xacro` | URI resolution edge cases |
+| `test/worlds/importer_test.sdf` | Walled test world for sensor validation |
+| `test/worlds/robotnik_world.sdf` | Robotnik environment world |
+
+See `demo/VALIDATION_CHECKLIST.md` for the full manual test procedure and `demo/smoke_test.md` for a quick smoke-test protocol.
 
 ## Known limitations
 
