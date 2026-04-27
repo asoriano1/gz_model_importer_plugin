@@ -359,18 +359,10 @@ Rectangle {
             implicitWidth: 104
             onClicked: {
               logsCard.logsExpanded = false
-              var s = backend.stateName
-              if (s === "Configuring") {
-                // Preview entity is in the scene — remove it gracefully and
-                // return to Ready (file stays loaded, pose/name preserved).
-                backend.cancelPreview()
-              } else {
-                // Previewing: spawn still in-flight, isPreviewing()==false so
-                // cancelPreview() would be a no-op; use reset() to abort and
-                // go to Idle (stale ack is discarded by the backend guard).
-                // Spawning: final spawn in-flight; reset() is the only option.
-                backend.reset()
-              }
+              // Always do a full reset so the panel returns to the minimal
+              // initial view (Idle).  reset() removes any live preview entity
+              // before transitioning, so the scene stays clean.
+              backend.reset()
             }
           }
 
