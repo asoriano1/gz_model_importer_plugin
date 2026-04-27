@@ -21,6 +21,7 @@
 #include "robot_importer_gui/GzSpawnClient.hh"
 #include "robot_importer_gui/InstanceRewriter.hh"
 #include "robot_importer_gui/Ros2RuntimeAnalyzer.hh"
+#include "robot_importer_gui/RuntimeProcessManager.hh"
 #include "robot_importer_gui/SdfUriRewriter.hh"
 #include "robot_importer_gui/SdfPreflightChecker.hh"
 
@@ -33,7 +34,8 @@ ImporterBackend::ImporterBackend(QObject *_parent)
   importOptions_(std::make_unique<ImportOptions>(this)),
   modelLoader_(std::make_unique<ModelLoader>(this)),
   previewController_(std::make_unique<PreviewController>(this)),
-  spawnClient_(std::make_unique<GzSpawnClient>(this))
+  spawnClient_(std::make_unique<GzSpawnClient>(this)),
+  processManager_(std::make_unique<RuntimeProcessManager>(this))
 {
   connect(fileSelector_.get(), &FileSelector::fileReady,
           this, &ImporterBackend::onFileReady);
@@ -63,15 +65,15 @@ ImporterBackend::ImporterBackend(QObject *_parent)
   connect(spawnClient_.get(), &GzSpawnClient::spawnFailed,
           this, &ImporterBackend::onSpawnFailed);
 
-  // Pose debounce: user changes a pose field → 600ms quiet period → move preview.
+  connect(processManager_.get(), &RuntimeProcessManager::statusChanged,
+          this, &ImporterBackend::runtimeRunningChanged);
+
   poseDebounceTimer_ = new QTimer(this);
   poseDebounceTimer_->setSingleShot(true);
   poseDebounceTimer_->setInterval(600);
   connect(poseDebounceTimer_, &QTimer::timeout,
           this, &ImporterBackend::onPoseDebounceTimeout);
 
-  // Any ImportOptions pose property change fires the debounce (only active
-  // when updatingFromGazebo_ is false and state is Configuring).
   auto scheduleMove = [this]()
   {
     if (updatingFromGazebo_) return;
@@ -91,21 +93,6 @@ ImporterBackend::~ImporterBackend() = default;
 int     ImporterBackend::stateInt()  const { return static_cast<int>(state_); }
 QString ImporterBackend::stateName() const { return importerStateName(state_); }
 
-// isBusy() gates UI controls. Valid action summary:
-//
-//   Action          | Allowed from states
-//   ----------------+------------------------------------------------
-//   requestPreview  | Ready, PreviewFailed, SpawnFailed
-//   cancelPreview   | Previewing, Configuring
-//   importRobot     | Ready, Configuring, PreviewFailed, SpawnFailed
-//   reset           | any (always safe)
-//   setXacroArgs    | any (applied at next load)
-//
-// SpawnFailed is included because currentSdf_ is still valid and the user
-// may want to change the instance name and retry without re-loading the file.
-//
-// The QML layer disables interactive controls when isBusy() is true.
-// The C++ guards in each method enforce the same contract defensively.
 bool ImporterBackend::isBusy() const
 {
   return state_ == ImporterState::Expanding  ||
@@ -123,8 +110,6 @@ ImportOptions     *ImporterBackend::importOptions()     const { return importOpt
 PreviewController *ImporterBackend::previewController() const { return previewController_.get(); }
 
 // ============================================================
-// reset()
-// ============================================================
 void ImporterBackend::reset()
 {
   gzmsg << "[robot_importer_gui] reset() called from state: "
@@ -133,8 +118,6 @@ void ImporterBackend::reset()
   poseDebounceTimer_->stop();
   modelLoader_->cancel();
 
-  // Clear pending file before cancelling preview so onPreviewCancelled()
-  // doesn't start loading the pending file as part of the reset flow.
   pendingFilePath_.clear();
   pendingFileFormat_ = FileFormat::Unknown;
 
@@ -160,54 +143,29 @@ void ImporterBackend::reset()
   setState(ImporterState::Idle);
 }
 
-// ============================================================
-// setXacroArgs()
-// ============================================================
 void ImporterBackend::setXacroArgs(const QStringList &_args)
 {
   xacroArgs_ = _args;
 }
 
-// ============================================================
-// requestPreview()
-// ============================================================
 void ImporterBackend::requestPreview()
 {
-  // Configuring: preview already live — cancel first.
-  // Previewing: spawn in-flight — wait for it.
-  // SpawnFailed: currentSdf_ is valid, allow retry with updated options.
   if (state_ != ImporterState::Ready        &&
       state_ != ImporterState::PreviewFailed &&
       state_ != ImporterState::SpawnFailed)
     return;
 
-  if (!ensureWorldName())
-    return;
+  if (!ensureWorldName()) return;
 
-  // Operational requirement: pause world before any spawn to prevent
-  // DART/ODE trimesh crash during physics step. World stays paused for the
-  // entire preview+import cycle; user resumes manually after.
   spawnClient_->pauseWorldSync(worldName_);
-
   setState(ImporterState::Previewing);
 
-  // Apply instance name / namespace to SDF before spawning.
   const std::string rewritten = applyOptionsToSdf();
-
   const EntitySpawnPose initialPose{
-      importOptions_->poseX(),
-      importOptions_->poseY(),
-      importOptions_->poseZ(),
-      importOptions_->poseRoll(),
-      importOptions_->posePitch(),
-      importOptions_->poseYaw()
+      importOptions_->poseX(), importOptions_->poseY(), importOptions_->poseZ(),
+      importOptions_->poseRoll(), importOptions_->posePitch(), importOptions_->poseYaw()
   };
 
-  // Preview SDF transformations applied by preparePreviewSdf():
-  //   - <plugin> stripped (not needed, avoids spurious ROS connections)
-  //   - <static>true</static> injected (no dynamic physics, stays in place)
-  //   - <collision> kept (required for auto-inertia computation)
-  //   - <visual>, <inertial> unchanged
   gzmsg << "[robot_importer_gui] Spawning preview '__preview_"
         << importOptions_->instanceName().toStdString()
         << "' world='" << worldName_.toStdString()
@@ -221,84 +179,58 @@ void ImporterBackend::requestPreview()
       initialPose);
 }
 
-// ============================================================
-// cancelPreview()
-// ============================================================
 void ImporterBackend::cancelPreview()
 {
-  // Valid only while preview is live (Previewing = spawn in-flight,
-  // Configuring = preview entity exists in scene).
   if (state_ != ImporterState::Previewing &&
       state_ != ImporterState::Configuring)
     return;
-  if (!previewController_->isPreviewing())
-    return;
+  if (!previewController_->isPreviewing()) return;
 
   gzmsg << "[robot_importer_gui] Cancelling preview.\n";
   previewController_->cancelPreview();
-  // State is restored in onPreviewCancelled().
 }
 
-// ============================================================
-// importRobot() — final spawn
-// ============================================================
 void ImporterBackend::importRobot()
 {
-  // Valid when SDF is ready (Ready/PreviewFailed/SpawnFailed) or preview is
-  // live (Configuring). NOT allowed during in-flight ops (Expanding,
-  // Converting, Previewing, Spawning).
   if (state_ != ImporterState::Ready        &&
       state_ != ImporterState::Configuring  &&
       state_ != ImporterState::PreviewFailed &&
       state_ != ImporterState::SpawnFailed)
     return;
 
-  if (!ensureWorldName())
-    return;
+  if (!ensureWorldName()) return;
 
   if (previewController_->isPreviewing())
   {
-    // Remove the preview entity first; confirmReady() will trigger
-    // the final spawn via onConfirmReady().
     gzmsg << "[robot_importer_gui] Confirm preview → removing preview entity.\n";
     setState(ImporterState::Spawning);
     previewController_->confirmPreview();
     return;
   }
 
-  // No preview active: spawn directly.
   doFinalSpawn();
 }
 
-// ============================================================
-// Collaborator slots
-// ============================================================
+// ---- Collaborator slots ----------------------------------------------------
+
 void ImporterBackend::onFileReady(const QString &path, FileFormat format)
 {
   lastError_.clear();
   emit lastErrorChanged();
 
-  // Cancel any in-flight load (e.g. previous XACRO expansion).
   modelLoader_->cancel();
 
-  // Defer new file load if a preview entity is alive OR a spawn is in-flight
-  // (state == Previewing but spawn ack not yet received).
-  // - isPreviewing() == true:  entity is in the scene → cancel + wait for remove
-  // - state == Previewing:     spawn still in-flight → store pending; the stale
-  //   ack handler in onPreviewSpawned() will cancel the orphan once it arrives
-  const bool previewLive     = previewController_->isPreviewing();
-  const bool spawnInFlight   = (state_ == ImporterState::Previewing);
+  const bool previewLive   = previewController_->isPreviewing();
+  const bool spawnInFlight = (state_ == ImporterState::Previewing);
   if (previewLive || spawnInFlight)
   {
     gzmsg << "[robot_importer_gui] Preview "
           << (spawnInFlight ? "in-flight" : "active")
-          << " — deferring load of '" << path.toStdString()
-          << "' until preview is removed.\n";
+          << " — deferring load of '" << path.toStdString() << "'\n";
     pendingFilePath_   = path;
     pendingFileFormat_ = format;
     if (previewLive)
       previewController_->cancelPreview();
-    // If only in-flight: onPreviewSpawned() stale-ack handler cancels it.
     return;
   }
 
@@ -313,7 +245,6 @@ void ImporterBackend::onFileError(const QString &msg)
 
 void ImporterBackend::onLoadComplete(const QString &sdfContent)
 {
-  // Guard: reset() may have been called while load was in-flight.
   if (state_ != ImporterState::Expanding &&
       state_ != ImporterState::Converting)
   {
@@ -322,19 +253,13 @@ void ImporterBackend::onLoadComplete(const QString &sdfContent)
     return;
   }
 
-  // Step 1: rewrite model:// / package:// / relative URIs to file://.
-  const RewriteResult rw = SdfUriRewriter::rewrite(
-      sdfContent, modelDir_, modelsRoot_);
+  const RewriteResult rw = SdfUriRewriter::rewrite(sdfContent, modelDir_, modelsRoot_);
   currentSdf_ = rw.sdf;
 
-  // Step 2: preflight — scan for known issues (no fixes, only reporting).
   const PreflightFindings pf = SdfPreflightChecker::analyze(rw.sdf, rw.unresolvedUris);
 
-  // Build a human-readable preflight report for the panel.
   {
     QStringList lines;
-
-    // URI resolution summary.
     if (rw.totalUris > 0 || !rw.unresolvedUris.isEmpty())
     {
       QString uriLine = QStringLiteral("URIs: %1/%2 resolved")
@@ -347,20 +272,17 @@ void ImporterBackend::onLoadComplete(const QString &sdfContent)
       }
       lines.append(uriLine);
     }
-
     if (!pf.ogreMaterialScripts.isEmpty())
     {
-      QString line = QStringLiteral("Ogre material scripts: %1 detected (not supported in gz-sim):")
+      QString line = QStringLiteral("Ogre material scripts: %1 detected:")
           .arg(pf.ogreMaterialScripts.size());
       for (const QString &s : pf.ogreMaterialScripts)
         line += QStringLiteral("\n  • ") + s;
       lines.append(line);
     }
-
     if (pf.meshCollisionCount > 0)
       lines.append(QStringLiteral("Mesh collisions: %1 detected (may cause physics warnings)")
           .arg(pf.meshCollisionCount));
-
     if (!pf.pluginFilenames.isEmpty())
     {
       QString line = QStringLiteral("Plugins stripped for preview (%1):")
@@ -369,62 +291,80 @@ void ImporterBackend::onLoadComplete(const QString &sdfContent)
         line += QStringLiteral("\n  • ") + fn;
       lines.append(line);
     }
-
     preflightReport_ = lines.join(QStringLiteral("\n"));
     emit preflightReportChanged();
   }
 
-  gzmsg << "[robot_importer_gui] SDF loaded ("
-        << rw.sdf.size() << " chars). Step 3: auto-preview.\n";
+  gzmsg << "[robot_importer_gui] SDF loaded (" << rw.sdf.size() << " chars).\n";
   if (!preflightReport_.isEmpty())
-    gzmsg << "[robot_importer_gui] Preflight report:\n"
-          << preflightReport_.toStdString() << "\n";
+    gzmsg << "[robot_importer_gui] Preflight:\n" << preflightReport_.toStdString() << "\n";
 
-  // Step 3: ROS 2 runtime analysis — non-blocking advisory.
+  // Runtime analysis.
   {
     const QString originalPath = fileSelector_->selectedPath();
     const RuntimeFindings rf   = Ros2RuntimeAnalyzer::analyze(rw.sdf, originalPath);
 
     if (rf.needsRuntime)
     {
-      // Build multi-line summary for the UI card.
+      runtimeSummary_ = rf.summary;
+
+      // Detailed warning text (multi-line list for the panel).
       QStringList lines;
       lines.append(QStringLiteral(
-          "This model may require external ROS 2 nodes/controllers."));
+          "This model may require external ROS 2 nodes to function correctly."));
+
+      // Bridge requirements.
+      int bridgeCount = 0;
+      for (const SensorFindings &s : rf.sensors)
+      {
+        if (!s.needsBridge) continue;
+        ++bridgeCount;
+        QString desc = QStringLiteral("  • %1/%2 (%3) — %4")
+            .arg(s.sensorType,
+                 s.sensorName.isEmpty() ? QStringLiteral("?") : s.sensorName,
+                 s.bridge.confidence,
+                 s.bridge.gazeboTopic.isEmpty() ? QStringLiteral("topic unknown") : s.bridge.gazeboTopic);
+        lines.append(desc);
+      }
+      if (bridgeCount > 0)
+        lines.prepend(QStringLiteral("Native sensors needing ros_gz_bridge (%1):").arg(bridgeCount));
 
       if (!rf.pluginList.isEmpty())
       {
-        lines.append(QStringLiteral("Detected:"));
+        lines.append(QStringLiteral("ROS plugins detected:"));
         for (const QString &pl : rf.pluginList)
           lines.append(QStringLiteral("  • ") + pl);
       }
-
       if (rf.hasXacroControlArgs)
-      {
         lines.append(QStringLiteral("XACRO control args: ") +
                      rf.xacroControlArgs.join(QLatin1String(", ")));
-      }
 
       runtimeWarning_ = lines.join('\n');
+      hasBridgeRequirements_    = rf.hasBridgeRequirements;
+      hasUnresolvedRuntimeItems_ = rf.hasUnresolvedRuntimeItems;
+
+      bridgeCommand_          = LaunchGenerator::bridgeCommand(
+          rf, importOptions_->rosNamespace());
       suggestedLaunchContent_ = LaunchGenerator::launchFileContent(
-          rf,
-          importOptions_->instanceName(),
-          importOptions_->rosNamespace());
+          rf, importOptions_->instanceName(), importOptions_->rosNamespace());
       suggestedLaunchCommand_ = LaunchGenerator::launchCommand(
-          rf,
-          importOptions_->instanceName(),
-          importOptions_->rosNamespace());
+          rf, importOptions_->instanceName(), importOptions_->rosNamespace());
       customLaunchCommand_    = suggestedLaunchCommand_;
 
-      gzmsg << "[robot_importer_gui] Runtime analysis: "
-            << runtimeWarning_.toStdString() << "\n";
+      gzmsg << "[robot_importer_gui] Runtime: " << runtimeSummary_.toStdString() << "\n";
+      if (!bridgeCommand_.isEmpty())
+        gzmsg << "[robot_importer_gui] Bridge cmd: " << bridgeCommand_.toStdString() << "\n";
     }
     else
     {
       runtimeWarning_.clear();
+      runtimeSummary_.clear();
       suggestedLaunchContent_.clear();
       suggestedLaunchCommand_.clear();
+      bridgeCommand_.clear();
       customLaunchCommand_.clear();
+      hasBridgeRequirements_     = false;
+      hasUnresolvedRuntimeItems_ = false;
     }
     emit runtimeWarningChanged();
     emit customLaunchCommandChanged();
@@ -436,54 +376,38 @@ void ImporterBackend::onLoadComplete(const QString &sdfContent)
 
 void ImporterBackend::onLoadFailed(const QString &error)
 {
-  // Guard: reset() may have been called while load was in-flight.
   if (state_ != ImporterState::Expanding &&
       state_ != ImporterState::Converting)
   {
-    gzwarn << "[robot_importer_gui] Stale loadFailed in state "
-           << stateName().toStdString() << " — discarded.\n";
+    gzwarn << "[robot_importer_gui] Stale loadFailed — discarded.\n";
     return;
   }
-
   gzwarn << "[robot_importer_gui] Load failed: " << error.toStdString() << "\n";
   const bool wasXacro = (state_ == ImporterState::Expanding);
   setError(error);
-  setState(wasXacro ? ImporterState::ExpansionFailed
-                    : ImporterState::ConversionFailed);
+  setState(wasXacro ? ImporterState::ExpansionFailed : ImporterState::ConversionFailed);
 }
 
 void ImporterBackend::onPreviewSpawned(const QString &name)
 {
-  // Guard: state changed while spawn was in-flight (e.g. a new file was
-  // selected during the service call). The spawn ack arrived late; the entity
-  // IS in Gazebo's scene but we no longer want it. Cancel it immediately so it
-  // doesn't linger, then let onPreviewCancelled() dispatch the pending file.
   if (state_ != ImporterState::Previewing)
   {
     gzwarn << "[robot_importer_gui] Stale preview spawn ack for '"
-           << name.toStdString() << "' (state=" << stateName().toStdString()
-           << "). Removing orphaned entity.\n";
+           << name.toStdString() << "'. Removing orphan.\n";
     previewController_->cancelPreview();
     return;
   }
-
-  gzmsg << "[robot_importer_gui] Preview entity alive: "
-        << name.toStdString() << "\n";
-  // Preview entity is alive in the scene. Move to Configuring so the
-  // options panel is shown and import/cancel buttons appear.
+  gzmsg << "[robot_importer_gui] Preview entity alive: " << name.toStdString() << "\n";
   setState(ImporterState::Configuring);
 }
 
 void ImporterBackend::onPreviewFailed(const QString &error)
 {
-  // Guard: discard if we're no longer in Previewing (e.g. reset was called).
   if (state_ != ImporterState::Previewing)
   {
-    gzwarn << "[robot_importer_gui] Stale previewFailed in state "
-           << stateName().toStdString() << " — discarded.\n";
+    gzwarn << "[robot_importer_gui] Stale previewFailed — discarded.\n";
     return;
   }
-
   gzwarn << "[robot_importer_gui] Preview failed: " << error.toStdString() << "\n";
   setError(error);
   setState(ImporterState::PreviewFailed);
@@ -493,10 +417,8 @@ void ImporterBackend::onPreviewCancelled()
 {
   if (!pendingFilePath_.isEmpty())
   {
-    // A new file was selected while the preview was active.
-    // Now that the preview entity is gone, start loading the new file.
-    const QString path     = pendingFilePath_;
-    const FileFormat fmt   = pendingFileFormat_;
+    const QString path   = pendingFilePath_;
+    const FileFormat fmt = pendingFileFormat_;
     pendingFilePath_.clear();
     pendingFileFormat_ = FileFormat::Unknown;
     gzmsg << "[robot_importer_gui] Previous preview removed — loading '"
@@ -504,77 +426,46 @@ void ImporterBackend::onPreviewCancelled()
     startFileLoad(path, fmt);
     return;
   }
-
-  // Normal cancel (user clicked Cancel or explicitly cancelled preview).
-  // Guard: if reset() was called while the preview removal was in-flight
-  // (e.g. Cancel pressed during Previewing state), the state is already
-  // Idle and we must not transition back to Ready with no file loaded.
-  if (state_ == ImporterState::Idle)
-    return;
-
+  if (state_ == ImporterState::Idle) return;
   gzmsg << "[robot_importer_gui] Preview cancelled — returning to Ready.\n";
   setState(ImporterState::Ready);
 }
 
-void ImporterBackend::onConfirmReady(const QString & /*worldName*/,
-                                     const QString & /*sdfContent*/,
-                                     const QString & /*instanceName*/)
+void ImporterBackend::onConfirmReady(const QString &, const QString &, const QString &)
 {
-  // The preview entity has been removed by PreviewController.
-  // The signal carries worldName, sdfContent, instanceName for context, but
-  // doFinalSpawn() re-derives everything from this object's own state
-  // (currentSdf_ + importOptions_) to ensure a single authoritative source.
-  // The preview SDF was stripped of plugins; the final spawn uses the full SDF.
   doFinalSpawn();
 }
 
 void ImporterBackend::onSpawnComplete(const QString &name)
 {
-  // Guard: discard stale acks (e.g. if reset() races a long service call).
   if (state_ != ImporterState::Spawning)
   {
-    gzwarn << "[robot_importer_gui] Stale spawnComplete for '"
-           << name.toStdString() << "' in state "
-           << stateName().toStdString() << " — discarded.\n";
+    gzwarn << "[robot_importer_gui] Stale spawnComplete — discarded.\n";
     return;
   }
-
   gzmsg << "[robot_importer_gui] Spawn complete: " << name.toStdString() << "\n";
-  // Clear all transient diagnostics so the Done state shows a clean slate.
-  // lastError_ may contain a stale message from a previous PreviewFailed or
-  // world-not-found attempt that survived through the import flow.
-  lastError_.clear();
-  lastWarning_.clear();
-  preflightReport_.clear();
-  emit lastErrorChanged();
-  emit lastWarningChanged();
-  emit preflightReportChanged();
+  lastError_.clear(); lastWarning_.clear(); preflightReport_.clear();
+  emit lastErrorChanged(); emit lastWarningChanged(); emit preflightReportChanged();
   setState(ImporterState::Done);
 }
 
 void ImporterBackend::onSpawnFailed(const QString &error)
 {
-  // Guard: discard stale acks.
   if (state_ != ImporterState::Spawning)
   {
-    gzwarn << "[robot_importer_gui] Stale spawnFailed in state "
-           << stateName().toStdString() << " — discarded.\n";
+    gzwarn << "[robot_importer_gui] Stale spawnFailed — discarded.\n";
     return;
   }
-
   gzerr << "[robot_importer_gui] Spawn failed: " << error.toStdString() << "\n";
   setError(error);
   setState(ImporterState::SpawnFailed);
 }
 
-// ============================================================
-// Internal helpers
-// ============================================================
+// ---- Internal helpers ------------------------------------------------------
+
 bool ImporterBackend::ensureWorldName()
 {
-  if (!worldName_.isEmpty())
-    return true;
-
+  if (!worldName_.isEmpty()) return true;
   worldName_ = spawnClient_->discoverWorldName();
   if (worldName_.isEmpty())
   {
@@ -583,8 +474,7 @@ bool ImporterBackend::ensureWorldName()
         "Is Gazebo running and the gz-transport network reachable?"));
     return false;
   }
-  gzmsg << "[robot_importer_gui] World discovered: "
-        << worldName_.toStdString() << "\n";
+  gzmsg << "[robot_importer_gui] World discovered: " << worldName_.toStdString() << "\n";
   emit worldNameChanged();
   return true;
 }
@@ -598,44 +488,24 @@ std::string ImporterBackend::applyOptionsToSdf()
       importOptions_->framePrefix().toStdString()};
   const std::string rewritten = InstanceRewriter::rewrite(
       currentSdf_.toStdString(), opts, warnings);
-  if (!warnings.isEmpty())
-    setWarning(warnings);
+  if (!warnings.isEmpty()) setWarning(warnings);
   return rewritten;
 }
 
 void ImporterBackend::doFinalSpawn()
 {
   setState(ImporterState::Spawning);
-
-  // Enforce pause before final spawn. The world should already be paused
-  // from the preview phase, but re-asserting is cheap and prevents any race
-  // if the user resumed manually between cancel-preview and final spawn.
   spawnClient_->pauseWorldSync(worldName_);
 
   const std::string rewritten = applyOptionsToSdf();
-
-  // Use the pose currently shown in the panel — which is exactly the pose
-  // the user positioned the preview at (or typed in the panel).
   const EntitySpawnPose finalPose{
-      importOptions_->poseX(),
-      importOptions_->poseY(),
-      importOptions_->poseZ(),
-      importOptions_->poseRoll(),
-      importOptions_->posePitch(),
-      importOptions_->poseYaw()
+      importOptions_->poseX(), importOptions_->poseY(), importOptions_->poseZ(),
+      importOptions_->poseRoll(), importOptions_->posePitch(), importOptions_->poseYaw()
   };
 
-  // Final spawn uses the FULL SDF: plugins intact, collisions intact.
-  // No stripping is applied — this is the production model with all physics.
-  // Any engine warnings after this point (auto-inertia, dartsim mesh) come
-  // from the model or the physics engine, not from the importer.
   gzmsg << "[robot_importer_gui] Final spawn: entity='"
         << importOptions_->instanceName().toStdString()
-        << "' world='" << worldName_.toStdString()
-        << "' pose=(" << finalPose.x << "," << finalPose.y
-        << "," << finalPose.z
-        << " R=" << finalPose.roll << " P=" << finalPose.pitch
-        << " Y=" << finalPose.yaw << ")\n";
+        << "' world='" << worldName_.toStdString() << "'\n";
 
   spawnClient_->spawnEntity(
       worldName_,
@@ -666,42 +536,24 @@ void ImporterBackend::setWarning(const QString &_msg)
 void ImporterBackend::onGazeboPoseMoved(double x, double y, double z,
                                          double roll, double pitch, double yaw)
 {
-  // Gazebo publishes pose_info at ~60 Hz. If the debounce timer is active the
-  // user has committed a new pose value that has not yet been sent to Gazebo.
-  // Overwriting importOptions_ here would replace the user's value with the
-  // stale Gazebo position, causing the debounce to send (0,0,0) instead of the
-  // user's intended pose.
   if (poseDebounceTimer_->isActive()) return;
-
   updatingFromGazebo_ = true;
-  importOptions_->setPoseX(x);
-  importOptions_->setPoseY(y);
-  importOptions_->setPoseZ(z);
-  importOptions_->setPoseRoll(roll);
-  importOptions_->setPosePitch(pitch);
+  importOptions_->setPoseX(x); importOptions_->setPoseY(y); importOptions_->setPoseZ(z);
+  importOptions_->setPoseRoll(roll); importOptions_->setPosePitch(pitch);
   importOptions_->setPoseYaw(yaw);
   updatingFromGazebo_ = false;
 }
 
-// ============================================================
-// startFileLoad — shared entry point after cancel or direct selection
-// ============================================================
 void ImporterBackend::startFileLoad(const QString &path, FileFormat format)
 {
   const QFileInfo info(path);
   modelDir_   = info.absoluteDir().absolutePath();
   modelsRoot_ = QFileInfo(modelDir_).absoluteDir().absolutePath();
 
-  // Discard diagnostics from any previous load or import attempt so the
-  // log section does not show stale content while the new file is loading.
-  // lastError_ was already cleared by onFileReady(); clear the rest here.
-  lastWarning_.clear();
-  preflightReport_.clear();
-  emit lastWarningChanged();
-  emit preflightReportChanged();
+  lastWarning_.clear(); preflightReport_.clear();
+  emit lastWarningChanged(); emit preflightReportChanged();
 
   clearRuntimeState();
-
   resetPose();
   assignUniqueName(path);
 
@@ -709,43 +561,29 @@ void ImporterBackend::startFileLoad(const QString &path, FileFormat format)
         << "  modelDir=" << modelDir_.toStdString() << "\n";
 
   setState(format == FileFormat::Xacro
-           ? ImporterState::Expanding
-           : ImporterState::Converting);
+           ? ImporterState::Expanding : ImporterState::Converting);
 
   QStringList effectiveArgs = xacroArgs_;
-
   if (format == FileFormat::Xacro)
   {
-    // Auto-discover <xacro:arg> declarations and build a baseline arg list.
-    // Priority: user-supplied args override file defaults; args without any
-    // default are passed as empty string so xacro does not abort on them.
     const QMap<QString, QString> discovered = XacroExpander::discoverArgs(path);
     if (!discovered.isEmpty())
     {
-      // Build a set of arg names the user already supplied.
       QSet<QString> userArgNames;
       for (const QString &a : xacroArgs_)
       {
         const int sep = a.indexOf(QStringLiteral(":="));
-        if (sep > 0)
-          userArgNames.insert(a.left(sep));
+        if (sep > 0) userArgNames.insert(a.left(sep));
       }
-
-      // Append defaults for every discovered arg not already in user list.
       for (auto it = discovered.cbegin(); it != discovered.cend(); ++it)
-      {
         if (!userArgNames.contains(it.key()))
           effectiveArgs << (it.key() + QStringLiteral(":=") + it.value());
-      }
 
-      gzmsg << "[robot_importer_gui] XACRO args discovered: "
-            << discovered.size() << ", effective arg list:";
-      for (const QString &a : effectiveArgs)
-        gzmsg << " [" << a.toStdString() << "]";
+      gzmsg << "[robot_importer_gui] XACRO args discovered: " << discovered.size();
+      for (const QString &a : effectiveArgs) gzmsg << " [" << a.toStdString() << "]";
       gzmsg << "\n";
     }
   }
-
   modelLoader_->load(path, format, effectiveArgs);
 }
 
@@ -754,21 +592,14 @@ QString ImporterBackend::extractModelBaseName(const QString &filePath)
 {
   const QFileInfo info(filePath);
   const QString stem = info.completeBaseName().toLower();
-
-  // When the file is named generically, use the parent directory name instead.
   static const QStringList kGeneric = {"model", "robot", "description", "urdf"};
-  const QString raw = kGeneric.contains(stem)
-      ? info.dir().dirName().toLower()
-      : stem;
+  const QString raw = kGeneric.contains(stem) ? info.dir().dirName().toLower() : stem;
 
-  // Keep only ASCII alphanumeric and underscore; collapse runs of other chars.
   QString name;
-  bool prevWasUs = true;  // suppress leading underscore
+  bool prevWasUs = true;
   for (const QChar c : raw)
   {
-    const bool ok = (c >= 'a' && c <= 'z') ||
-                    (c >= '0' && c <= '9') ||
-                    c == '_';
+    const bool ok = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
     if (ok) { name.append(c); prevWasUs = (c == '_'); }
     else if (!prevWasUs) { name.append('_'); prevWasUs = true; }
   }
@@ -778,35 +609,24 @@ QString ImporterBackend::extractModelBaseName(const QString &filePath)
 
 void ImporterBackend::resetPose()
 {
-  updatingFromGazebo_ = true;  // suppress debounce during programmatic reset
-  importOptions_->setPoseX(0.0);
-  importOptions_->setPoseY(0.0);
-  importOptions_->setPoseZ(0.0);
-  importOptions_->setPoseRoll(0.0);
-  importOptions_->setPosePitch(0.0);
-  importOptions_->setPoseYaw(0.0);
+  updatingFromGazebo_ = true;
+  importOptions_->setPoseX(0.0); importOptions_->setPoseY(0.0); importOptions_->setPoseZ(0.0);
+  importOptions_->setPoseRoll(0.0); importOptions_->setPosePitch(0.0); importOptions_->setPoseYaw(0.0);
   updatingFromGazebo_ = false;
 }
 
 void ImporterBackend::assignUniqueName(const QString &filePath)
 {
   const QString base = extractModelBaseName(filePath);
-
-  // Query existing model names from the world (best-effort; empty on failure).
   QSet<QString> taken;
-  if (ensureWorldName())
-    taken = spawnClient_->queryModelNames(worldName_);
+  if (ensureWorldName()) taken = spawnClient_->queryModelNames(worldName_);
 
-  // Find the lowest integer suffix N such that "<base>_N" is not taken.
-  // Also avoid names already proposed this session (nameCounters_) to reduce
-  // the chance of collision if the world state cannot be queried.
   int &sessionIdx = nameCounters_[base];
   if (sessionIdx == 0) sessionIdx = 1;
 
   QString candidate;
-  do {
-    candidate = base + "_" + QString::number(sessionIdx++);
-  } while (taken.contains(candidate));
+  do { candidate = base + "_" + QString::number(sessionIdx++); }
+  while (taken.contains(candidate));
 
   importOptions_->setInstanceName(candidate);
   gzmsg << "[robot_importer_gui] Proposed instance name: '"
@@ -816,61 +636,47 @@ void ImporterBackend::assignUniqueName(const QString &filePath)
 void ImporterBackend::onPoseDebounceTimeout()
 {
   if (state_ != ImporterState::Configuring) return;
-  if (!previewController_->isPreviewing())  return;
+  if (!previewController_->isPreviewing()) return;
 
-  // Ensure world is paused before remove+respawn. Should already be paused
-  // from the initial requestPreview(), but re-assert if the user resumed.
   spawnClient_->pauseWorldSync(worldName_);
-
   const EntitySpawnPose newPose{
-      importOptions_->poseX(),
-      importOptions_->poseY(),
-      importOptions_->poseZ(),
-      importOptions_->poseRoll(),
-      importOptions_->posePitch(),
-      importOptions_->poseYaw()
+      importOptions_->poseX(), importOptions_->poseY(), importOptions_->poseZ(),
+      importOptions_->poseRoll(), importOptions_->posePitch(), importOptions_->poseYaw()
   };
-
-  gzmsg << "[robot_importer_gui] Moving preview to pos=("
-        << newPose.x << "," << newPose.y << "," << newPose.z
-        << ") rpy=(" << newPose.roll << "," << newPose.pitch
-        << "," << newPose.yaw << ")\n";
-
   previewController_->respawnAt(newPose);
 }
 
-// ============================================================
-// clearRuntimeState — shared teardown for reset() and startFileLoad()
-// ============================================================
 void ImporterBackend::clearRuntimeState()
 {
   runtimeWarning_.clear();
+  runtimeSummary_.clear();
   suggestedLaunchContent_.clear();
   suggestedLaunchCommand_.clear();
+  bridgeCommand_.clear();
   customLaunchCommand_.clear();
+  hasBridgeRequirements_     = false;
+  hasUnresolvedRuntimeItems_ = false;
   emit runtimeWarningChanged();
   emit customLaunchCommandChanged();
 
-  // Stop any managed launch process.
-  if (launchProcess_)
-  {
-    launchProcess_->terminate();
-    launchProcess_->waitForFinished(500);
-    launchProcess_->deleteLater();
-    launchProcess_ = nullptr;
-    launchRunning_ = false;
-    emit launchRunningChanged();
-  }
+  processManager_->reset();
 }
 
-// ============================================================
-// Runtime analysis accessors
-// ============================================================
-QString ImporterBackend::runtimeWarning()         const { return runtimeWarning_; }
-QString ImporterBackend::suggestedLaunchContent() const { return suggestedLaunchContent_; }
-QString ImporterBackend::suggestedLaunchCommand() const { return suggestedLaunchCommand_; }
-QString ImporterBackend::customLaunchCommand()    const { return customLaunchCommand_; }
-bool    ImporterBackend::launchRunning()          const { return launchRunning_; }
+// ---- Accessors -------------------------------------------------------------
+
+QString ImporterBackend::runtimeWarning()          const { return runtimeWarning_; }
+QString ImporterBackend::suggestedLaunchContent()  const { return suggestedLaunchContent_; }
+QString ImporterBackend::suggestedLaunchCommand()  const { return suggestedLaunchCommand_; }
+QString ImporterBackend::customLaunchCommand()     const { return customLaunchCommand_; }
+
+bool    ImporterBackend::runtimeRequired()          const { return !runtimeSummary_.isEmpty(); }
+QString ImporterBackend::runtimeSummary()           const { return runtimeSummary_; }
+QString ImporterBackend::bridgeCommand()            const { return bridgeCommand_; }
+bool    ImporterBackend::hasBridgeRequirements()    const { return hasBridgeRequirements_; }
+bool    ImporterBackend::hasUnresolvedRuntimeItems() const { return hasUnresolvedRuntimeItems_; }
+
+bool    ImporterBackend::runtimeRunning() const { return processManager_->isRunning(); }
+QString ImporterBackend::runtimeStatus()  const { return processManager_->statusText(); }
 
 void ImporterBackend::setCustomLaunchCommand(const QString &cmd)
 {
@@ -881,20 +687,17 @@ void ImporterBackend::setCustomLaunchCommand(const QString &cmd)
 
 void ImporterBackend::copyLaunchCommand()
 {
-  const QString cmd = suggestedLaunchCommand_.isEmpty()
-                    ? customLaunchCommand_
+  const QString cmd = !bridgeCommand_.isEmpty() ? bridgeCommand_
+                    : !customLaunchCommand_.isEmpty() ? customLaunchCommand_
                     : suggestedLaunchCommand_;
-  if (!cmd.isEmpty())
-    QGuiApplication::clipboard()->setText(cmd);
+  if (!cmd.isEmpty()) QGuiApplication::clipboard()->setText(cmd);
 }
 
 bool ImporterBackend::saveLaunchFile(const QString &pathOrUrl)
 {
-  // FileDialog gives us a file:// URL; strip the scheme.
   QString path = pathOrUrl;
   if (path.startsWith(QLatin1String("file://")))
     path = QUrl(path).toLocalFile();
-
   QFile f(path);
   if (!f.open(QIODevice::WriteOnly | QIODevice::Text))
   {
@@ -909,52 +712,19 @@ bool ImporterBackend::saveLaunchFile(const QString &pathOrUrl)
 
 void ImporterBackend::runLaunchCommand()
 {
-  if (launchRunning_) return;
+  if (processManager_->isRunning()) return;
 
-  const QString cmd = customLaunchCommand_.isEmpty()
-                    ? suggestedLaunchCommand_
-                    : customLaunchCommand_;
+  const QString cmd = !customLaunchCommand_.isEmpty()
+                    ? customLaunchCommand_ : suggestedLaunchCommand_;
   if (cmd.isEmpty()) return;
 
-  const QStringList parts = cmd.split(' ', Qt::SkipEmptyParts);
-  if (parts.isEmpty()) return;
-
-  delete launchProcess_;
-  launchProcess_ = new QProcess(this);
-
-  connect(launchProcess_,
-          QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
-          this, [this](int /*code*/, QProcess::ExitStatus /*status*/)
-  {
-    launchRunning_ = false;
-    emit launchRunningChanged();
-  });
-
-  launchProcess_->start(parts.first(), parts.mid(1));
-  if (launchProcess_->waitForStarted(2000))
-  {
-    gzmsg << "[robot_importer_gui] Launch command started: "
-          << cmd.toStdString() << "\n";
-    launchRunning_ = true;
-    emit launchRunningChanged();
-  }
-  else
-  {
-    gzwarn << "[robot_importer_gui] Failed to start: " << cmd.toStdString() << "\n";
+  if (!processManager_->run(cmd))
     setError(QStringLiteral("Failed to start: %1").arg(cmd));
-    delete launchProcess_;
-    launchProcess_ = nullptr;
-  }
 }
 
 void ImporterBackend::stopLaunchCommand()
 {
-  if (!launchProcess_ || !launchRunning_) return;
-  launchProcess_->terminate();
-  // Give it a moment; kill if still alive.
-  if (!launchProcess_->waitForFinished(3000))
-    launchProcess_->kill();
-  gzmsg << "[robot_importer_gui] Launch command stopped.\n";
+  processManager_->stop();
 }
 
 }  // namespace robot_importer_gui

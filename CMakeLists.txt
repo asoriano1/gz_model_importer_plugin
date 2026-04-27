@@ -53,6 +53,7 @@ set(PLUGIN_SOURCES
   src/SdfPreflightChecker.cpp
   src/Ros2RuntimeAnalyzer.cpp
   src/LaunchGenerator.cpp
+  src/RuntimeProcessManager.cpp
 )
 
 # Headers that carry Q_OBJECT must be listed for AUTOMOC with CMP0100 NEW.
@@ -65,6 +66,7 @@ set(PLUGIN_MOC_HEADERS
   include/robot_importer_gui/ModelLoader.hh
   include/robot_importer_gui/PreviewController.hh
   include/robot_importer_gui/GzSpawnClient.hh
+  include/robot_importer_gui/RuntimeProcessManager.hh
 )
 
 # Name MUST match the .qrc filename (without extension) to get a unique
