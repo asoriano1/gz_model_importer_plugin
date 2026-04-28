@@ -112,6 +112,18 @@ void ImporterBackend::setXacroNamespace(const QString &v)
     onFileReady(currentFilePath_, currentFileFormat_);
 }
 
+bool    ImporterBackend::hasXacroPrefixArg() const { return hasXacroPrefixArg_; }
+QString ImporterBackend::xacroPrefix()       const { return xacroPrefix_; }
+
+void ImporterBackend::setXacroPrefix(const QString &v)
+{
+  if (xacroPrefix_ == v) return;
+  xacroPrefix_ = v;
+  emit xacroPrefixChanged();
+  if (!currentFilePath_.isEmpty() && currentFileFormat_ == FileFormat::Xacro)
+    onFileReady(currentFilePath_, currentFileFormat_);
+}
+
 FileSelector      *ImporterBackend::fileSelector()      const { return fileSelector_.get(); }
 ImportOptions     *ImporterBackend::importOptions()     const { return importOptions_.get(); }
 PreviewController *ImporterBackend::previewController() const { return previewController_.get(); }
@@ -150,9 +162,12 @@ void ImporterBackend::reset()
 
   hasXacroNamespaceArg_ = false;
   xacroNamespace_.clear();
+  emit xacroNamespaceChanged();
+  hasXacroPrefixArg_ = false;
+  xacroPrefix_.clear();
+  emit xacroPrefixChanged();
   currentFilePath_.clear();
   currentFileFormat_ = FileFormat::Unknown;
-  emit xacroNamespaceChanged();
 
   setState(ImporterState::Idle);
 }
@@ -551,21 +566,27 @@ void ImporterBackend::startFileLoad(const QString &path, FileFormat format)
   {
     const QMap<QString, QString> discovered = XacroExpander::discoverArgs(path);
 
-    // Detect namespace arg and initialise override value.
-    const bool hasNs = discovered.contains(QStringLiteral("namespace"));
+    // Detect namespace and prefix args; initialise override values on new file.
+    const bool hasNs  = discovered.contains(QStringLiteral("namespace"));
+    const bool hasPfx = discovered.contains(QStringLiteral("prefix"));
     if (isNewFile)
     {
-      // New file: reset namespace to the XACRO default (or empty).
-      xacroNamespace_ = hasNs ? discovered.value(QStringLiteral("namespace")) : QString{};
+      xacroNamespace_ = hasNs  ? discovered.value(QStringLiteral("namespace")) : QString{};
+      xacroPrefix_    = hasPfx ? discovered.value(QStringLiteral("prefix"))    : QString{};
     }
     if (hasNs != hasXacroNamespaceArg_)
     {
       hasXacroNamespaceArg_ = hasNs;
       emit xacroNamespaceChanged();
     }
+    if (hasPfx != hasXacroPrefixArg_)
+    {
+      hasXacroPrefixArg_ = hasPfx;
+      emit xacroPrefixChanged();
+    }
 
-    // Build effective args: external xacroArgs_ first, then UI namespace
-    // override (always wins over the XACRO default), then remaining defaults.
+    // Build effective args: external xacroArgs_ first, then UI overrides
+    // (always win over XACRO defaults), then remaining discovered defaults.
     QSet<QString> coveredArgs;
     for (const QString &a : xacroArgs_)
     {
@@ -577,6 +598,11 @@ void ImporterBackend::startFileLoad(const QString &path, FileFormat format)
     {
       coveredArgs.insert(QStringLiteral("namespace"));
       effectiveArgs << (QStringLiteral("namespace:=") + xacroNamespace_);
+    }
+    if (hasPfx && !xacroPrefix_.isEmpty())
+    {
+      coveredArgs.insert(QStringLiteral("prefix"));
+      effectiveArgs << (QStringLiteral("prefix:=") + xacroPrefix_);
     }
 
     for (auto it = discovered.cbegin(); it != discovered.cend(); ++it)
@@ -592,12 +618,18 @@ void ImporterBackend::startFileLoad(const QString &path, FileFormat format)
   }
   else
   {
-    // Non-XACRO file: clear namespace state.
+    // Non-XACRO file: clear namespace/prefix state.
     if (hasXacroNamespaceArg_)
     {
       hasXacroNamespaceArg_ = false;
       xacroNamespace_.clear();
       emit xacroNamespaceChanged();
+    }
+    if (hasXacroPrefixArg_)
+    {
+      hasXacroPrefixArg_ = false;
+      xacroPrefix_.clear();
+      emit xacroPrefixChanged();
     }
   }
 
