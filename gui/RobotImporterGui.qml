@@ -340,7 +340,7 @@ Rectangle {
         // ---- Section 4: actions ----
         RowLayout {
           Layout.fillWidth: true; spacing: 8
-          visible: isImportable || isCancellable || isErrorState || isDone
+          visible: isImportable || isCancellable || isErrorState
 
           Button {
             text: "Import Model"
@@ -373,15 +373,6 @@ Rectangle {
             }
           }
 
-          // "Import another" after a successful import
-          Button {
-            text: "Import another"
-            font.pixelSize: 12
-            visible: isDone
-            implicitWidth: 110
-            onClicked: backend.reset()
-          }
-
           // "Reset" in terminal-error states (SpawnFailed, ExpansionFailed, …)
           Button {
             text: "Reset"
@@ -402,7 +393,7 @@ Rectangle {
           border.color: "#e0e0e0"; border.width: 1
           radius: 4
 
-          property bool poseExpanded: true
+          property bool poseExpanded: false
 
           ColumnLayout {
             id: optionsCol

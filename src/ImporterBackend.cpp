@@ -406,9 +406,8 @@ void ImporterBackend::onSpawnComplete(const QString &name)
   gzmsg << "[robot_importer_gui] Spawn complete: " << name.toStdString() << "\n";
   lastError_.clear(); lastWarning_.clear(); preflightReport_.clear();
   emit lastErrorChanged(); emit lastWarningChanged(); emit preflightReportChanged();
+  clearRuntimeHint();
   setState(ImporterState::Done);
-  // Hint stays visible in Done state so user sees it and can act on it.
-  // It is cleared on the next reset() or file load.
 }
 
 void ImporterBackend::onSpawnFailed(const QString &error)
