@@ -119,15 +119,6 @@ Rectangle {
     onAccepted: fileSelector.onFileChosen(fileDialog.fileUrl.toString())
   }
 
-  FileDialog {
-    id: saveLaunchDialog
-    title: "Save launch file"
-    selectExisting: false
-    defaultSuffix: "py"
-    nameFilters: ["Python launch files (*.py)", "All files (*)"]
-    onAccepted: backend.saveLaunchFile(saveLaunchDialog.fileUrl.toString())
-  }
-
   // Auto-expand the log section when diagnostics become available.
   // Also auto-scroll so newly visible sections are reachable.
   Connections {
@@ -349,7 +340,7 @@ Rectangle {
         // ---- Section 4: actions ----
         RowLayout {
           Layout.fillWidth: true; spacing: 8
-          visible: isImportable || isCancellable || isErrorState
+          visible: isImportable || isCancellable || isErrorState || isDone
 
           Button {
             text: "Import Model"
@@ -380,6 +371,15 @@ Rectangle {
               // before transitioning, so the scene stays clean.
               backend.reset()
             }
+          }
+
+          // "Import another" after a successful import
+          Button {
+            text: "Import another"
+            font.pixelSize: 12
+            visible: isDone
+            implicitWidth: 110
+            onClicked: backend.reset()
           }
 
           // "Reset" in terminal-error states (SpawnFailed, ExpansionFailed, …)
@@ -574,240 +574,75 @@ Rectangle {
           }
         }
 
-        // ---- Section 7: ROS 2 runtime advisory (non-blocking) ----
+        // ---- Section 7: ROS 2 bridge hint (informational only) ----
         Rectangle {
-          id: runtimeCard
-          visible: backend.runtimeRequired
+          id: runtimeHintCard
+          visible: backend.hasRuntimeHint
           Layout.fillWidth: true
-          implicitHeight: runtimeCol.implicitHeight + 16
-          color: backend.hasUnresolvedRuntimeItems ? "#fce4ec" : "#fff3e0"
-          border.color: backend.hasUnresolvedRuntimeItems ? "#e53935" : "#fb8c00"
+          implicitHeight: hintCol.implicitHeight + 16
+          color: "#fff8e1"
+          border.color: "#ffb300"
           border.width: 1
           radius: 4
 
           property bool detailsExpanded: false
-          property bool runExpanded: false
 
           ColumnLayout {
-            id: runtimeCol
+            id: hintCol
             anchors {
               top: parent.top; left: parent.left; right: parent.right
               topMargin: 8; leftMargin: 8; rightMargin: 8
             }
             spacing: 4
 
-            // Header row: icon + summary + status dot
-            RowLayout {
-              Layout.fillWidth: true; spacing: 6
-
-              Label {
-                text: "⚠ ROS 2 runtime required"
-                font.bold: true; font.pixelSize: 12
-                color: backend.hasUnresolvedRuntimeItems ? "#b71c1c" : "#e65100"
-              }
-
-              Item { Layout.fillWidth: true }
-
-              // Process status dot
-              Rectangle {
-                visible: backend.runtimeRunning ||
-                         backend.runtimeStatus === "Stopped" ||
-                         backend.runtimeStatus === "Failed" ||
-                         backend.runtimeStatus === "Executable not found"
-                width: 8; height: 8; radius: 4
-                color: {
-                  if (backend.runtimeRunning)        return "#2e7d32"
-                  if (backend.runtimeStatus === "Failed" ||
-                      backend.runtimeStatus === "Executable not found") return "#c62828"
-                  return "#9e9e9e"
-                }
-              }
-              Label {
-                visible: backend.runtimeRunning ||
-                         backend.runtimeStatus === "Stopped" ||
-                         backend.runtimeStatus === "Failed" ||
-                         backend.runtimeStatus === "Executable not found"
-                text: backend.runtimeStatus
-                font.pixelSize: 10; color: "#757575"
-              }
+            Label {
+              text: "ROS 2 bridge hint"
+              font.bold: true; font.pixelSize: 12; color: "#e65100"
             }
 
-            // Summary line
             Label {
-              text: backend.runtimeSummary
-              font.pixelSize: 11; color: "#bf360c"; font.bold: true
-              wrapMode: Text.Wrap; Layout.fillWidth: true
-              visible: backend.runtimeSummary.length > 0
-            }
-
-            // Unresolved items warning
-            Label {
-              visible: backend.hasUnresolvedRuntimeItems
-              text: "Some bridge topics could not be inferred — review the generated command."
-              font.pixelSize: 10; font.italic: true; color: "#b71c1c"
+              text: backend.runtimeHint
+              font.pixelSize: 11; color: "#4e342e"
               wrapMode: Text.Wrap; Layout.fillWidth: true
             }
 
-            // Details toggle (shows full runtimeWarning text)
+            // Details toggle
             Item {
               Layout.fillWidth: true
-              implicitHeight: detailsToggle.implicitHeight + 2
-              visible: backend.runtimeWarning.length > 0
+              implicitHeight: hintDetailsToggle.implicitHeight + 2
+              visible: backend.runtimeHintDetails.length > 0
 
               Label {
-                id: detailsToggle
+                id: hintDetailsToggle
                 anchors.verticalCenter: parent.verticalCenter
-                text: (runtimeCard.detailsExpanded ? "▼" : "▶") + "  Details"
+                text: (runtimeHintCard.detailsExpanded ? "▼" : "▶") + "  Detected items"
                 font.pixelSize: 11; color: "#555"
               }
               MouseArea {
                 anchors.fill: parent; cursorShape: Qt.PointingHandCursor
-                onClicked: runtimeCard.detailsExpanded = !runtimeCard.detailsExpanded
+                onClicked: runtimeHintCard.detailsExpanded = !runtimeHintCard.detailsExpanded
               }
             }
 
-            // Details content
             Rectangle {
-              visible: runtimeCard.detailsExpanded && backend.runtimeWarning.length > 0
+              visible: runtimeHintCard.detailsExpanded && backend.runtimeHintDetails.length > 0
               Layout.fillWidth: true
-              implicitHeight: detailsLabel.implicitHeight + 8
-              color: "#fff8e1"; radius: 3
-              border.color: "#ffe082"; border.width: 1
+              implicitHeight: hintDetailsLabel.implicitHeight + 8
+              color: "#fff3e0"; radius: 3; border.color: "#ffe082"; border.width: 1
 
               Label {
-                id: detailsLabel
+                id: hintDetailsLabel
                 anchors { left: parent.left; right: parent.right; top: parent.top; margins: 4 }
-                text: backend.runtimeWarning
+                text: backend.runtimeHintDetails
                 font.pixelSize: 10; font.family: "monospace"
                 color: "#4e342e"; wrapMode: Text.Wrap
               }
             }
 
-            // Bridge command preview (only when bridge is available)
-            Rectangle {
-              visible: backend.hasBridgeRequirements && backend.bridgeCommand.length > 0
-              Layout.fillWidth: true
-              implicitHeight: bridgeCmdLabel.implicitHeight + 8
-              color: "#e8f5e9"; radius: 3
-              border.color: "#66bb6a"; border.width: 1
-
-              Label {
-                id: bridgeCmdLabel
-                anchors { left: parent.left; right: parent.right; top: parent.top; margins: 4 }
-                text: backend.bridgeCommand
-                font.pixelSize: 10; font.family: "monospace"
-                color: "#1b5e20"; wrapMode: Text.Wrap
-              }
-            }
-
-            // Action buttons
-            RowLayout {
-              spacing: 6; Layout.fillWidth: true
-
-              Button {
-                text: "Copy bridge"
-                font.pixelSize: 11; implicitWidth: 90
-                visible: backend.hasBridgeRequirements
-                onClicked: backend.copyLaunchCommand()
-              }
-
-              Button {
-                text: "Copy cmd"
-                font.pixelSize: 11; implicitWidth: 80
-                visible: !backend.hasBridgeRequirements
-                onClicked: backend.copyLaunchCommand()
-              }
-
-              Button {
-                text: "Save .py"
-                font.pixelSize: 11; implicitWidth: 70
-                onClicked: saveLaunchDialog.open()
-              }
-
-              Button {
-                text: (runtimeCard.runExpanded ? "▼" : "▶") + " Run…"
-                font.pixelSize: 11; implicitWidth: 72
-                onClicked: runtimeCard.runExpanded = !runtimeCard.runExpanded
-              }
-
-              Item { Layout.fillWidth: true }
-            }
-
-            // Collapsible run section
-            ColumnLayout {
-              visible: runtimeCard.runExpanded
-              Layout.fillWidth: true
-              spacing: 4
-
-              TextField {
-                id: launchCmdField
-                text: backend.customLaunchCommand.length > 0
-                      ? backend.customLaunchCommand
-                      : backend.suggestedLaunchCommand
-                font.pixelSize: 11; font.family: "monospace"
-                Layout.fillWidth: true
-                onEditingFinished: backend.setCustomLaunchCommand(text)
-
-                Connections {
-                  target: backend
-                  function onCustomLaunchCommandChanged() {
-                    if (!launchCmdField.activeFocus)
-                      launchCmdField.text = backend.customLaunchCommand.length > 0
-                                            ? backend.customLaunchCommand
-                                            : backend.suggestedLaunchCommand
-                  }
-                }
-              }
-
-              RowLayout {
-                spacing: 6
-
-                Button {
-                  text: backend.runtimeRunning ? "Stop" : "Run"
-                  font.pixelSize: 11; implicitWidth: 60
-                  onClicked: backend.runtimeRunning
-                             ? backend.stopLaunchCommand()
-                             : backend.runLaunchCommand()
-                }
-
-                Label {
-                  visible: backend.runtimeRunning
-                  text: "● Running"
-                  font.pixelSize: 11; color: "#2e7d32"; font.bold: true
-                }
-
-                Label {
-                  visible: !backend.runtimeRunning &&
-                           (backend.runtimeStatus === "Failed" ||
-                            backend.runtimeStatus === "Executable not found")
-                  text: "✗ " + backend.runtimeStatus
-                  font.pixelSize: 11; color: "#c62828"
-                }
-              }
-
-              // Process output (shown when there is output and not idle)
-              Rectangle {
-                visible: backend.runtimeOutput.length > 0 &&
-                         backend.runtimeStatus !== "Not started"
-                Layout.fillWidth: true
-                implicitHeight: Math.min(processOutputLabel.implicitHeight + 8, 120)
-                color: "#212121"; radius: 3
-                clip: true
-
-                Flickable {
-                  anchors { fill: parent; margins: 4 }
-                  contentHeight: processOutputLabel.implicitHeight
-                  clip: true
-
-                  Label {
-                    id: processOutputLabel
-                    width: parent.width
-                    text: backend.runtimeOutput
-                    font.pixelSize: 10; font.family: "monospace"
-                    color: "#f5f5f5"; wrapMode: Text.Wrap
-                  }
-                }
-              }
+            Label {
+              text: "Load the 'ROS 2 Bridge Manager' Gazebo GUI plugin to inspect topics and create bridges."
+              font.pixelSize: 10; font.italic: true; color: "#795548"
+              wrapMode: Text.Wrap; Layout.fillWidth: true
             }
           }
         }

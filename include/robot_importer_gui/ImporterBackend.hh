@@ -20,7 +20,6 @@ class FileSelector;
 class ModelLoader;
 class PreviewController;
 class GzSpawnClient;
-class RuntimeProcessManager;
 
 /// Central workflow controller.
 ///
@@ -45,24 +44,10 @@ class ImporterBackend : public QObject
   Q_PROPERTY(QString worldName       READ worldName       NOTIFY worldNameChanged)
   Q_PROPERTY(QString preflightReport READ preflightReport NOTIFY preflightReportChanged)
 
-  // ---- Runtime analysis (string-based, for backward compat) ----
-  Q_PROPERTY(QString runtimeWarning         READ runtimeWarning         NOTIFY runtimeWarningChanged)
-  Q_PROPERTY(QString suggestedLaunchContent READ suggestedLaunchContent NOTIFY runtimeWarningChanged)
-  Q_PROPERTY(QString suggestedLaunchCommand READ suggestedLaunchCommand NOTIFY runtimeWarningChanged)
-  Q_PROPERTY(QString customLaunchCommand    READ customLaunchCommand    NOTIFY customLaunchCommandChanged)
-
-  // ---- Runtime analysis (structured) ----
-  Q_PROPERTY(bool    runtimeRequired          READ runtimeRequired          NOTIFY runtimeWarningChanged)
-  Q_PROPERTY(QString runtimeSummary           READ runtimeSummary           NOTIFY runtimeWarningChanged)
-  Q_PROPERTY(QString bridgeCommand            READ bridgeCommand            NOTIFY runtimeWarningChanged)
-  Q_PROPERTY(bool    hasBridgeRequirements    READ hasBridgeRequirements    NOTIFY runtimeWarningChanged)
-  Q_PROPERTY(bool    hasUnresolvedRuntimeItems READ hasUnresolvedRuntimeItems NOTIFY runtimeWarningChanged)
-
-  // ---- Process status ----
-  Q_PROPERTY(bool    runtimeRunning  READ runtimeRunning  NOTIFY runtimeRunningChanged)
-  Q_PROPERTY(bool    launchRunning   READ runtimeRunning  NOTIFY runtimeRunningChanged)  // compat alias
-  Q_PROPERTY(QString runtimeStatus   READ runtimeStatus   NOTIFY runtimeRunningChanged)
-  Q_PROPERTY(QString runtimeOutput   READ runtimeOutput   NOTIFY runtimeOutputChanged)
+  // ---- Lightweight ROS 2 hint (informational only, no process management) ----
+  Q_PROPERTY(bool    hasRuntimeHint     READ hasRuntimeHint     NOTIFY runtimeHintChanged)
+  Q_PROPERTY(QString runtimeHint        READ runtimeHint        NOTIFY runtimeHintChanged)
+  Q_PROPERTY(QString runtimeHintDetails READ runtimeHintDetails NOTIFY runtimeHintChanged)
 
   Q_PROPERTY(robot_importer_gui::FileSelector   *fileSelector
              READ fileSelector   CONSTANT)
@@ -82,20 +67,9 @@ class ImporterBackend : public QObject
   public: QString worldName()        const;
   public: QString preflightReport()  const;
 
-  public: QString runtimeWarning()          const;
-  public: QString suggestedLaunchContent()  const;
-  public: QString suggestedLaunchCommand()  const;
-  public: QString customLaunchCommand()     const;
-
-  public: bool    runtimeRequired()          const;
-  public: QString runtimeSummary()           const;
-  public: QString bridgeCommand()            const;
-  public: bool    hasBridgeRequirements()    const;
-  public: bool    hasUnresolvedRuntimeItems() const;
-
-  public: bool    runtimeRunning() const;
-  public: QString runtimeStatus()  const;
-  public: QString runtimeOutput()  const;
+  public: bool    hasRuntimeHint()     const;
+  public: QString runtimeHint()        const;
+  public: QString runtimeHintDetails() const;
 
   public: FileSelector      *fileSelector()      const;
   public: ImportOptions     *importOptions()     const;
@@ -107,21 +81,12 @@ class ImporterBackend : public QObject
   public: Q_INVOKABLE void cancelPreview();
   public: Q_INVOKABLE void setXacroArgs(const QStringList &_args);
 
-  public: Q_INVOKABLE void setCustomLaunchCommand(const QString &cmd);
-  public: Q_INVOKABLE void copyLaunchCommand();
-  public: Q_INVOKABLE bool saveLaunchFile(const QString &path);
-  public: Q_INVOKABLE void runLaunchCommand();
-  public: Q_INVOKABLE void stopLaunchCommand();
-
   signals: void stateChanged();
   signals: void lastErrorChanged();
   signals: void lastWarningChanged();
   signals: void worldNameChanged();
   signals: void preflightReportChanged();
-  signals: void runtimeWarningChanged();
-  signals: void customLaunchCommandChanged();
-  signals: void runtimeRunningChanged();
-  signals: void runtimeOutputChanged();
+  signals: void runtimeHintChanged();
 
   // ---- Collaborator slots ----
   private slots:
@@ -152,7 +117,7 @@ class ImporterBackend : public QObject
                                robot_importer_gui::FileFormat format);
   private: void resetPose();
   private: void assignUniqueName(const QString &filePath);
-  private: void clearRuntimeState();
+  private: void clearRuntimeHint();
   static QString extractModelBaseName(const QString &filePath);
 
   private: ImporterState state_{ImporterState::Idle};
@@ -163,16 +128,9 @@ class ImporterBackend : public QObject
   private: QString preflightReport_;
   private: QStringList xacroArgs_;
 
-  // Runtime analysis results — populated in onLoadComplete(), cleared in
-  // startFileLoad() and reset().
-  private: QString runtimeWarning_;
-  private: QString runtimeSummary_;
-  private: QString suggestedLaunchContent_;
-  private: QString suggestedLaunchCommand_;
-  private: QString bridgeCommand_;
-  private: QString customLaunchCommand_;
-  private: bool    hasBridgeRequirements_{false};
-  private: bool    hasUnresolvedRuntimeItems_{false};
+  // ROS 2 hint — populated in onLoadComplete(), cleared on reset/new load.
+  private: QString runtimeHint_;
+  private: QString runtimeHintDetails_;
 
   // Set when a file is chosen; used by SdfUriRewriter.
   private: QString modelDir_;
@@ -189,12 +147,11 @@ class ImporterBackend : public QObject
   // Per-session counters for unique name generation.
   private: QMap<QString, int> nameCounters_;
 
-  private: std::unique_ptr<FileSelector>          fileSelector_;
-  private: std::unique_ptr<ImportOptions>         importOptions_;
-  private: std::unique_ptr<ModelLoader>           modelLoader_;
-  private: std::unique_ptr<PreviewController>     previewController_;
-  private: std::unique_ptr<GzSpawnClient>         spawnClient_;
-  private: std::unique_ptr<RuntimeProcessManager> processManager_;
+  private: std::unique_ptr<FileSelector>      fileSelector_;
+  private: std::unique_ptr<ImportOptions>     importOptions_;
+  private: std::unique_ptr<ModelLoader>       modelLoader_;
+  private: std::unique_ptr<PreviewController> previewController_;
+  private: std::unique_ptr<GzSpawnClient>     spawnClient_;
 };
 
 }  // namespace robot_importer_gui

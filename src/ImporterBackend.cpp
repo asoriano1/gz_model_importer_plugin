@@ -1,27 +1,20 @@
 #include "robot_importer_gui/ImporterBackend.hh"
 
-#include <QClipboard>
 #include <QDir>
-#include <QFile>
 #include <QFileInfo>
-#include <QGuiApplication>
-#include <QProcess>
 #include <QRegExp>
 #include <QSet>
-#include <QTextStream>
-#include <QUrl>
+#include <QTimer>
 #include <gz/common/Console.hh>
 
 #include "robot_importer_gui/ImportOptions.hh"
 #include "robot_importer_gui/FileSelector.hh"
-#include "robot_importer_gui/LaunchGenerator.hh"
 #include "robot_importer_gui/ModelLoader.hh"
 #include "robot_importer_gui/XacroExpander.hh"
 #include "robot_importer_gui/PreviewController.hh"
 #include "robot_importer_gui/GzSpawnClient.hh"
 #include "robot_importer_gui/InstanceRewriter.hh"
-#include "robot_importer_gui/Ros2RuntimeAnalyzer.hh"
-#include "robot_importer_gui/RuntimeProcessManager.hh"
+#include "robot_importer_gui/RuntimeHintAnalyzer.hh"
 #include "robot_importer_gui/SdfUriRewriter.hh"
 #include "robot_importer_gui/SdfPreflightChecker.hh"
 
@@ -34,8 +27,7 @@ ImporterBackend::ImporterBackend(QObject *_parent)
   importOptions_(std::make_unique<ImportOptions>(this)),
   modelLoader_(std::make_unique<ModelLoader>(this)),
   previewController_(std::make_unique<PreviewController>(this)),
-  spawnClient_(std::make_unique<GzSpawnClient>(this)),
-  processManager_(std::make_unique<RuntimeProcessManager>(this))
+  spawnClient_(std::make_unique<GzSpawnClient>(this))
 {
   connect(fileSelector_.get(), &FileSelector::fileReady,
           this, &ImporterBackend::onFileReady);
@@ -65,11 +57,6 @@ ImporterBackend::ImporterBackend(QObject *_parent)
   connect(spawnClient_.get(), &GzSpawnClient::spawnFailed,
           this, &ImporterBackend::onSpawnFailed);
 
-  connect(processManager_.get(), &RuntimeProcessManager::statusChanged,
-          this, &ImporterBackend::runtimeRunningChanged);
-  connect(processManager_.get(), &RuntimeProcessManager::outputChanged,
-          this, &ImporterBackend::runtimeOutputChanged);
-
   poseDebounceTimer_ = new QTimer(this);
   poseDebounceTimer_->setSingleShot(true);
   poseDebounceTimer_->setInterval(600);
@@ -95,6 +82,7 @@ ImporterBackend::~ImporterBackend() = default;
 int     ImporterBackend::stateInt()  const { return static_cast<int>(state_); }
 QString ImporterBackend::stateName() const { return importerStateName(state_); }
 
+// isBusy() gates UI controls.
 bool ImporterBackend::isBusy() const
 {
   return state_ == ImporterState::Expanding  ||
@@ -102,10 +90,15 @@ bool ImporterBackend::isBusy() const
          state_ == ImporterState::Previewing ||
          state_ == ImporterState::Spawning;
 }
+
 QString ImporterBackend::lastError()       const { return lastError_; }
 QString ImporterBackend::lastWarning()     const { return lastWarning_; }
 QString ImporterBackend::worldName()       const { return worldName_; }
 QString ImporterBackend::preflightReport() const { return preflightReport_; }
+
+bool    ImporterBackend::hasRuntimeHint()     const { return !runtimeHint_.isEmpty(); }
+QString ImporterBackend::runtimeHint()        const { return runtimeHint_; }
+QString ImporterBackend::runtimeHintDetails() const { return runtimeHintDetails_; }
 
 FileSelector      *ImporterBackend::fileSelector()      const { return fileSelector_.get(); }
 ImportOptions     *ImporterBackend::importOptions()     const { return importOptions_.get(); }
@@ -141,7 +134,7 @@ void ImporterBackend::reset()
   emit lastWarningChanged();
   emit preflightReportChanged();
 
-  clearRuntimeState();
+  clearRuntimeHint();
   setState(ImporterState::Idle);
 }
 
@@ -301,75 +294,40 @@ void ImporterBackend::onLoadComplete(const QString &sdfContent)
   if (!preflightReport_.isEmpty())
     gzmsg << "[robot_importer_gui] Preflight:\n" << preflightReport_.toStdString() << "\n";
 
-  // Runtime analysis.
+  // Lightweight ROS 2 hint — scan the full SDF, not the stripped preview.
   {
     const QString originalPath = fileSelector_->selectedPath();
-    const RuntimeFindings rf   = Ros2RuntimeAnalyzer::analyze(rw.sdf, originalPath);
+    const RuntimeHint hint = RuntimeHintAnalyzer::analyze(rw.sdf, originalPath);
 
-    if (rf.needsRuntime)
+    if (hint.hasRuntimeRelevantContent)
     {
-      runtimeSummary_ = rf.summary;
+      QStringList hintParts;
+      if (hint.sensorCount > 0)
+        hintParts << QStringLiteral(
+            "This model contains %1 Gazebo sensor%2. "
+            "To expose their topics to ROS 2, use the ROS 2 Bridge Manager plugin after import.")
+            .arg(hint.sensorCount).arg(hint.sensorCount > 1 ? "s" : "");
+      if (hint.rosPluginCount > 0)
+        hintParts << QStringLiteral(
+            "This model contains ROS/Gazebo plugins. "
+            "Additional ROS 2 runtime setup may be required.");
+      if (hint.hasRos2Control)
+        hintParts << QStringLiteral(
+            "ros2_control-related elements were detected. "
+            "Controllers are not managed by this importer — "
+            "use your controller launch setup after import.");
 
-      // Detailed warning text (multi-line list for the panel).
-      QStringList lines;
-      lines.append(QStringLiteral(
-          "This model may require external ROS 2 nodes to function correctly."));
+      runtimeHint_ = hintParts.join(QStringLiteral(" "));
+      runtimeHintDetails_ = hint.detectedItems.join(QStringLiteral("\n"));
 
-      // Bridge requirements.
-      int bridgeCount = 0;
-      for (const SensorFindings &s : rf.sensors)
-      {
-        if (!s.needsBridge) continue;
-        ++bridgeCount;
-        QString desc = QStringLiteral("  • %1/%2 (%3) — %4")
-            .arg(s.sensorType,
-                 s.sensorName.isEmpty() ? QStringLiteral("?") : s.sensorName,
-                 s.bridge.confidence,
-                 s.bridge.gazeboTopic.isEmpty() ? QStringLiteral("topic unknown") : s.bridge.gazeboTopic);
-        lines.append(desc);
-      }
-      if (bridgeCount > 0)
-        lines.prepend(QStringLiteral("Native sensors needing ros_gz_bridge (%1):").arg(bridgeCount));
-
-      if (!rf.pluginList.isEmpty())
-      {
-        lines.append(QStringLiteral("ROS plugins detected:"));
-        for (const QString &pl : rf.pluginList)
-          lines.append(QStringLiteral("  • ") + pl);
-      }
-      if (rf.hasXacroControlArgs)
-        lines.append(QStringLiteral("XACRO control args: ") +
-                     rf.xacroControlArgs.join(QLatin1String(", ")));
-
-      runtimeWarning_ = lines.join('\n');
-      hasBridgeRequirements_    = rf.hasBridgeRequirements;
-      hasUnresolvedRuntimeItems_ = rf.hasUnresolvedRuntimeItems;
-
-      bridgeCommand_          = LaunchGenerator::bridgeCommand(
-          rf, importOptions_->rosNamespace());
-      suggestedLaunchContent_ = LaunchGenerator::launchFileContent(
-          rf, importOptions_->instanceName(), importOptions_->rosNamespace());
-      suggestedLaunchCommand_ = LaunchGenerator::launchCommand(
-          rf, importOptions_->instanceName(), importOptions_->rosNamespace());
-      customLaunchCommand_    = suggestedLaunchCommand_;
-
-      gzmsg << "[robot_importer_gui] Runtime: " << runtimeSummary_.toStdString() << "\n";
-      if (!bridgeCommand_.isEmpty())
-        gzmsg << "[robot_importer_gui] Bridge cmd: " << bridgeCommand_.toStdString() << "\n";
+      gzmsg << "[robot_importer_gui] Runtime hint: " << hint.summary.toStdString() << "\n";
     }
     else
     {
-      runtimeWarning_.clear();
-      runtimeSummary_.clear();
-      suggestedLaunchContent_.clear();
-      suggestedLaunchCommand_.clear();
-      bridgeCommand_.clear();
-      customLaunchCommand_.clear();
-      hasBridgeRequirements_     = false;
-      hasUnresolvedRuntimeItems_ = false;
+      runtimeHint_.clear();
+      runtimeHintDetails_.clear();
     }
-    emit runtimeWarningChanged();
-    emit customLaunchCommandChanged();
+    emit runtimeHintChanged();
   }
 
   setState(ImporterState::Ready);
@@ -448,8 +406,9 @@ void ImporterBackend::onSpawnComplete(const QString &name)
   gzmsg << "[robot_importer_gui] Spawn complete: " << name.toStdString() << "\n";
   lastError_.clear(); lastWarning_.clear(); preflightReport_.clear();
   emit lastErrorChanged(); emit lastWarningChanged(); emit preflightReportChanged();
-  clearRuntimeState();
   setState(ImporterState::Done);
+  // Hint stays visible in Done state so user sees it and can act on it.
+  // It is cleared on the next reset() or file load.
 }
 
 void ImporterBackend::onSpawnFailed(const QString &error)
@@ -556,7 +515,7 @@ void ImporterBackend::startFileLoad(const QString &path, FileFormat format)
   lastWarning_.clear(); preflightReport_.clear();
   emit lastWarningChanged(); emit preflightReportChanged();
 
-  clearRuntimeState();
+  clearRuntimeHint();
   resetPose();
   assignUniqueName(path);
 
@@ -649,86 +608,11 @@ void ImporterBackend::onPoseDebounceTimeout()
   previewController_->respawnAt(newPose);
 }
 
-void ImporterBackend::clearRuntimeState()
+void ImporterBackend::clearRuntimeHint()
 {
-  runtimeWarning_.clear();
-  runtimeSummary_.clear();
-  suggestedLaunchContent_.clear();
-  suggestedLaunchCommand_.clear();
-  bridgeCommand_.clear();
-  customLaunchCommand_.clear();
-  hasBridgeRequirements_     = false;
-  hasUnresolvedRuntimeItems_ = false;
-  emit runtimeWarningChanged();
-  emit customLaunchCommandChanged();
-
-  processManager_->reset();
-}
-
-// ---- Accessors -------------------------------------------------------------
-
-QString ImporterBackend::runtimeWarning()          const { return runtimeWarning_; }
-QString ImporterBackend::suggestedLaunchContent()  const { return suggestedLaunchContent_; }
-QString ImporterBackend::suggestedLaunchCommand()  const { return suggestedLaunchCommand_; }
-QString ImporterBackend::customLaunchCommand()     const { return customLaunchCommand_; }
-
-bool    ImporterBackend::runtimeRequired()          const { return !runtimeSummary_.isEmpty(); }
-QString ImporterBackend::runtimeSummary()           const { return runtimeSummary_; }
-QString ImporterBackend::bridgeCommand()            const { return bridgeCommand_; }
-bool    ImporterBackend::hasBridgeRequirements()    const { return hasBridgeRequirements_; }
-bool    ImporterBackend::hasUnresolvedRuntimeItems() const { return hasUnresolvedRuntimeItems_; }
-
-bool    ImporterBackend::runtimeRunning() const { return processManager_->isRunning(); }
-QString ImporterBackend::runtimeStatus()  const { return processManager_->statusText(); }
-QString ImporterBackend::runtimeOutput()  const { return processManager_->processOutput(); }
-
-void ImporterBackend::setCustomLaunchCommand(const QString &cmd)
-{
-  if (customLaunchCommand_ == cmd) return;
-  customLaunchCommand_ = cmd;
-  emit customLaunchCommandChanged();
-}
-
-void ImporterBackend::copyLaunchCommand()
-{
-  const QString cmd = !bridgeCommand_.isEmpty() ? bridgeCommand_
-                    : !customLaunchCommand_.isEmpty() ? customLaunchCommand_
-                    : suggestedLaunchCommand_;
-  if (!cmd.isEmpty()) QGuiApplication::clipboard()->setText(cmd);
-}
-
-bool ImporterBackend::saveLaunchFile(const QString &pathOrUrl)
-{
-  QString path = pathOrUrl;
-  if (path.startsWith(QLatin1String("file://")))
-    path = QUrl(path).toLocalFile();
-  QFile f(path);
-  if (!f.open(QIODevice::WriteOnly | QIODevice::Text))
-  {
-    setError(QStringLiteral("Cannot write launch file: %1").arg(path));
-    return false;
-  }
-  QTextStream out(&f);
-  out << suggestedLaunchContent_;
-  gzmsg << "[robot_importer_gui] Launch file saved: " << path.toStdString() << "\n";
-  return true;
-}
-
-void ImporterBackend::runLaunchCommand()
-{
-  if (processManager_->isRunning()) return;
-
-  const QString cmd = !customLaunchCommand_.isEmpty()
-                    ? customLaunchCommand_ : suggestedLaunchCommand_;
-  if (cmd.isEmpty()) return;
-
-  if (!processManager_->run(cmd))
-    setError(QStringLiteral("Failed to start: %1").arg(cmd));
-}
-
-void ImporterBackend::stopLaunchCommand()
-{
-  processManager_->stop();
+  runtimeHint_.clear();
+  runtimeHintDetails_.clear();
+  emit runtimeHintChanged();
 }
 
 }  // namespace robot_importer_gui

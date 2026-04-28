@@ -98,6 +98,16 @@ The `test/` directory contains ready-to-use models for manual validation:
 
 See `test/models/README.md` for details on each model and the expected behaviour.
 
+## ROS 2 bridge / runtime note
+
+The importer does **not** launch ROS 2 bridges or manage runtime processes.
+
+When a loaded model contains native Gazebo sensors (camera, lidar, IMU, …) or ROS-related plugins, the importer shows a compact informational hint after import. No bridge commands are generated and no external processes are started.
+
+To bridge Gazebo sensor topics to ROS 2 after import, use the separate **ROS 2 Bridge Manager** plugin (`gz_ros2_bridge_manager`), which inspects models already present in the Gazebo world and manages `ros_gz_bridge` instances.
+
+Models with `ros2_control`-related elements require an external controller launch setup — this is also outside the scope of the importer.
+
 ## Known limitations
 
 - XACRO files with required arguments that cannot be inferred are not supported without manual parameter injection.
