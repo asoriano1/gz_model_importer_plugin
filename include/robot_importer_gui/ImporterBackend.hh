@@ -57,6 +57,14 @@ class ImporterBackend : public QObject
   Q_PROPERTY(QString xacroNamespace       READ xacroNamespace       WRITE setXacroNamespace
              NOTIFY xacroNamespaceChanged)
 
+  // ---- XACRO prefix override ----
+  // Visible only when the loaded XACRO declares a "prefix" arg.
+  // Controls link/sensor/frame_id naming — passed as prefix:=<v> at
+  // expansion time; changing it re-triggers XACRO expansion automatically.
+  Q_PROPERTY(bool    hasXacroPrefixArg READ hasXacroPrefixArg NOTIFY xacroPrefixChanged)
+  Q_PROPERTY(QString xacroPrefix       READ xacroPrefix       WRITE setXacroPrefix
+             NOTIFY xacroPrefixChanged)
+
   Q_PROPERTY(robot_importer_gui::FileSelector   *fileSelector
              READ fileSelector   CONSTANT)
   Q_PROPERTY(robot_importer_gui::ImportOptions  *importOptions
@@ -83,6 +91,10 @@ class ImporterBackend : public QObject
   public: QString xacroNamespace()       const;
   public: void    setXacroNamespace(const QString &v);
 
+  public: bool    hasXacroPrefixArg() const;
+  public: QString xacroPrefix()       const;
+  public: void    setXacroPrefix(const QString &v);
+
   public: FileSelector      *fileSelector()      const;
   public: ImportOptions     *importOptions()     const;
   public: PreviewController *previewController() const;
@@ -100,6 +112,7 @@ class ImporterBackend : public QObject
   signals: void preflightReportChanged();
   signals: void runtimeHintChanged();
   signals: void xacroNamespaceChanged();
+  signals: void xacroPrefixChanged();
 
   // ---- Collaborator slots ----
   private slots:
@@ -145,10 +158,12 @@ class ImporterBackend : public QObject
   private: QString runtimeHint_;
   private: QString runtimeHintDetails_;
 
-  // XACRO namespace override.
+  // XACRO namespace / prefix overrides.
   private: bool    hasXacroNamespaceArg_{false};
   private: QString xacroNamespace_;
-  // Current file — stored to allow re-expansion when namespace changes.
+  private: bool    hasXacroPrefixArg_{false};
+  private: QString xacroPrefix_;
+  // Current file — stored to allow re-expansion when args change.
   private: QString     currentFilePath_;
   private: FileFormat  currentFileFormat_{FileFormat::Unknown};
 

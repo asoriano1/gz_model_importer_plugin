@@ -364,7 +364,7 @@ Rectangle {
               columns: 2; columnSpacing: 8; rowSpacing: 4
               Layout.fillWidth: true
 
-              Label { text: "Name";  font.pixelSize: 12; color: "#555" }
+              Label { text: "Model name";  font.pixelSize: 12; color: "#555" }
               TextField {
                 text: importOptions.instanceName
                 font.pixelSize: 12; Layout.fillWidth: true
@@ -380,6 +380,18 @@ Rectangle {
                 text: backend.xacroNamespace
                 font.pixelSize: 12; Layout.fillWidth: true
                 onEditingFinished: backend.xacroNamespace = text
+              }
+
+              Label {
+                text: "Frame prefix"; font.pixelSize: 12; color: "#555"
+                visible: backend.hasXacroPrefixArg
+              }
+              TextField {
+                visible: backend.hasXacroPrefixArg
+                text: backend.xacroPrefix
+                placeholderText: "(none)"
+                font.pixelSize: 12; Layout.fillWidth: true
+                onEditingFinished: backend.xacroPrefix = text
               }
             }
 
