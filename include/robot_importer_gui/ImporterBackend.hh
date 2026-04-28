@@ -49,6 +49,14 @@ class ImporterBackend : public QObject
   Q_PROPERTY(QString runtimeHint        READ runtimeHint        NOTIFY runtimeHintChanged)
   Q_PROPERTY(QString runtimeHintDetails READ runtimeHintDetails NOTIFY runtimeHintChanged)
 
+  // ---- XACRO namespace override ----
+  // Visible only when the loaded XACRO declares a "namespace" arg.
+  // Value is passed as namespace:=<v> at expansion time; changing it
+  // re-triggers XACRO expansion automatically.
+  Q_PROPERTY(bool    hasXacroNamespaceArg READ hasXacroNamespaceArg NOTIFY xacroNamespaceChanged)
+  Q_PROPERTY(QString xacroNamespace       READ xacroNamespace       WRITE setXacroNamespace
+             NOTIFY xacroNamespaceChanged)
+
   Q_PROPERTY(robot_importer_gui::FileSelector   *fileSelector
              READ fileSelector   CONSTANT)
   Q_PROPERTY(robot_importer_gui::ImportOptions  *importOptions
@@ -71,6 +79,10 @@ class ImporterBackend : public QObject
   public: QString runtimeHint()        const;
   public: QString runtimeHintDetails() const;
 
+  public: bool    hasXacroNamespaceArg() const;
+  public: QString xacroNamespace()       const;
+  public: void    setXacroNamespace(const QString &v);
+
   public: FileSelector      *fileSelector()      const;
   public: ImportOptions     *importOptions()     const;
   public: PreviewController *previewController() const;
@@ -87,6 +99,7 @@ class ImporterBackend : public QObject
   signals: void worldNameChanged();
   signals: void preflightReportChanged();
   signals: void runtimeHintChanged();
+  signals: void xacroNamespaceChanged();
 
   // ---- Collaborator slots ----
   private slots:
@@ -131,6 +144,13 @@ class ImporterBackend : public QObject
   // ROS 2 hint — populated in onLoadComplete(), cleared on reset/new load.
   private: QString runtimeHint_;
   private: QString runtimeHintDetails_;
+
+  // XACRO namespace override.
+  private: bool    hasXacroNamespaceArg_{false};
+  private: QString xacroNamespace_;
+  // Current file — stored to allow re-expansion when namespace changes.
+  private: QString     currentFilePath_;
+  private: FileFormat  currentFileFormat_{FileFormat::Unknown};
 
   // Set when a file is chosen; used by SdfUriRewriter.
   private: QString modelDir_;
