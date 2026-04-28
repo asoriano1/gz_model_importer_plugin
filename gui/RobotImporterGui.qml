@@ -496,9 +496,9 @@ Rectangle {
           }
         }
 
-        // ---- Section 6: namespace / injection caveat ----
+        // ---- Section 6: namespace caveat (only when namespace is set) ----
         Rectangle {
-          visible: showOptions
+          visible: showOptions && importOptions.rosNamespace.length > 0
           Layout.fillWidth: true
           implicitHeight: noteText.implicitHeight + 14
           color: "#fff8e1"
@@ -511,8 +511,8 @@ Rectangle {
               top: parent.top; left: parent.left; right: parent.right
               topMargin: 7; leftMargin: 8; rightMargin: 8
             }
-            text: "Namespace injection applies only to recognised ROS plugin elements. " +
-                  "Hardcoded topics and plugin-internal names are left untouched."
+            text: "Namespace is injected into plugin <ros><namespace> elements. " +
+                  "Topic names hardcoded inside plugin <topic> parameters are not rewritten."
             font.pixelSize: 10; font.italic: true
             wrapMode: Text.Wrap
             color: "#5d4037"

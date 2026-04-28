@@ -7,28 +7,27 @@
 namespace robot_importer_gui
 {
 
-/// SDF rewriter for basic multi-instance support.
+/// SDF rewriter for multi-instance support.
 ///
-/// GUARANTEED behaviour:
-///   - Replaces the top-level <model name="..."> with instanceName.
+/// Rewrites performed in order:
+///
+///  1. Renames the top-level <model name="..."> to instanceName.
 ///     This makes the Gazebo entity name unique.
+///     Native Gazebo sensor topics embed the model name
+///     (/model/<name>/link/.../sensor/...) so they become unique too.
 ///
-/// BEST-EFFORT (noted, not universally applied):
-///   - rosNamespace and framePrefix are stored in Options and exposed in the
-///     UI, but are NOT rewritten into the SDF by this class.
-///     Reasons:
-///       * ros_namespace injection is only meaningful for ROS plugin elements
-///         that actually expose a <ros><namespace> parameter. The set of such
-///         plugins changes with each ros2 release and cannot be maintained
-///         without constant updates.
-///       * frame_prefix would require renaming every link and joint name while
-///         keeping all cross-references consistent — full graph walk, phase 5.
-///     The caller (ImporterBackend) will emit a user-visible warning if either
-///     option is non-empty, so the user knows they are taking manual action.
+///  2. Injects rosNamespace into plugin <ros><namespace> elements:
+///       - If a <plugin> already has a <ros> child, the <namespace> inside it
+///         is created or overwritten with the normalised namespace value.
+///       - If a <plugin> has no <ros> child but its filename matches a known
+///         gazebo_ros / gz_ros pattern, a <ros><namespace/></ros> block is
+///         injected as the first child.
+///     The namespace is normalised to start with '/'.
 ///
-/// CANNOT do:
-///   - Rewrite hardcoded topic/service strings inside arbitrary plugins.
-///   - Guarantee collision-free isolation for any model.
+/// Limitations:
+///   - Topic names hardcoded as <topic>...</topic> inside plugin configs are
+///     not rewritten; only <ros><namespace> is updated.
+///   - frame_prefix (TF link/joint renaming) is not yet implemented.
 struct InstanceRewriter
 {
   struct Options

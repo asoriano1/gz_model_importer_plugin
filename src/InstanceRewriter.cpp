@@ -1,11 +1,112 @@
 #include "robot_importer_gui/InstanceRewriter.hh"
 
 #include <QStringList>
+#include <gz/common/Console.hh>
 #include <tinyxml2.h>
 
 namespace robot_importer_gui
 {
 
+namespace
+{
+
+// ---- Plugin filename classification ----------------------------------------
+
+enum class PluginClass { Ros2Control, RosPlugin, Unrelated };
+
+static PluginClass classifyFilename(const char *fn)
+{
+  if (!fn || !*fn) return PluginClass::Unrelated;
+  std::string s(fn);
+  // strip lib prefix and .so suffix for matching
+  if (s.size() > 3 && s.substr(0, 3) == "lib") s = s.substr(3);
+  if (s.size() > 3 && s.substr(s.size() - 3) == ".so") s.resize(s.size() - 3);
+  // lower-case
+  for (char &c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+  for (const char *k : {"gz_ros2_control", "gazebo_ros2_control", "gazebo_ros_control"})
+    if (s.find(k) != std::string::npos) return PluginClass::Ros2Control;
+
+  if (s.rfind("gazebo_ros", 0) == 0 || s.rfind("gz_ros", 0) == 0)
+    return PluginClass::RosPlugin;
+
+  return PluginClass::Unrelated;
+}
+
+// ---- Namespace normalization ------------------------------------------------
+
+static std::string normalizeNs(const std::string &ns)
+{
+  if (ns.empty()) return {};
+  return ns[0] == '/' ? ns : "/" + ns;
+}
+
+// ---- Inject namespace into a single plugin element -------------------------
+
+static bool injectNsIntoPlugin(tinyxml2::XMLElement *pluginEl,
+                                const std::string &normalizedNs,
+                                tinyxml2::XMLDocument &doc)
+{
+  const char *fn        = pluginEl->Attribute("filename");
+  const bool knownRos   = classifyFilename(fn) != PluginClass::Unrelated;
+  auto *rosEl           = pluginEl->FirstChildElement("ros");
+
+  if (rosEl)
+  {
+    // Plugin already has <ros> — rewrite or inject <namespace> inside it.
+    if (auto *nsEl = rosEl->FirstChildElement("namespace"))
+      nsEl->SetText(normalizedNs.c_str());
+    else
+    {
+      auto *newNs = doc.NewElement("namespace");
+      newNs->SetText(normalizedNs.c_str());
+      rosEl->InsertFirstChild(newNs);
+    }
+    return true;
+  }
+
+  if (knownRos)
+  {
+    // Known ROS plugin without <ros> — inject <ros><namespace/></ros>.
+    auto *newRos = doc.NewElement("ros");
+    auto *newNs  = doc.NewElement("namespace");
+    newNs->SetText(normalizedNs.c_str());
+    newRos->InsertFirstChild(newNs);
+    pluginEl->InsertFirstChild(newRos);
+    return true;
+  }
+
+  return false;
+}
+
+// ---- Walk tree for namespace injection -------------------------------------
+
+static int walkAndInjectNs(tinyxml2::XMLElement *el,
+                            const std::string &normalizedNs,
+                            tinyxml2::XMLDocument &doc)
+{
+  if (!el) return 0;
+  int count = 0;
+
+  if (std::string(el->Name()) == "plugin")
+  {
+    if (injectNsIntoPlugin(el, normalizedNs, doc)) ++count;
+    // Don't recurse into plugin children — nested <plugin> tags are rare
+    // and treating them as independent plugins would be wrong.
+    return count;
+  }
+
+  for (auto *child = el->FirstChildElement();
+       child;
+       child = child->NextSiblingElement())
+    count += walkAndInjectNs(child, normalizedNs, doc);
+
+  return count;
+}
+
+}  // namespace
+
+// ============================================================
 std::string InstanceRewriter::rewrite(const std::string &_sdf,
                                       const Options &_opts,
                                       QString &_warnings)
@@ -18,10 +119,9 @@ std::string InstanceRewriter::rewrite(const std::string &_sdf,
   }
 
   QStringList warningList;
-
-  // ---- Rename top-level <model name="..."> ----
-  // This is the only rewrite guaranteed to work for any well-formed SDF.
   auto *root = doc.RootElement();
+
+  // ---- 1. Rename top-level <model name="..."> --------------------------------
   if (root && !_opts.instanceName.empty())
   {
     tinyxml2::XMLElement *modelEl = nullptr;
@@ -36,23 +136,34 @@ std::string InstanceRewriter::rewrite(const std::string &_sdf,
       warningList << QStringLiteral("No <model> element found — instance name not applied");
   }
 
-  // ---- ros_namespace: noted, not injected ----
-  // Injecting <ros><namespace> only works for a known subset of ROS plugins
-  // and that subset changes with each ros2 release. To avoid false promises,
-  // we surface a warning and leave namespace management to the user.
+  // ---- 2. Inject ROS namespace into plugin elements -------------------------
+  // Targets: any <plugin> that already has a <ros> child (regardless of
+  // filename) plus known gazebo_ros / gz_ros plugins that don't yet have one.
+  // Native Gazebo sensor topics already include the model name and are
+  // therefore unique once the model name is rewritten — no extra injection
+  // needed for those.
   if (!_opts.rosNamespace.empty())
   {
+    const std::string ns = normalizeNs(_opts.rosNamespace);
+    const int injected   = walkAndInjectNs(root, ns, doc);
+
+    if (injected > 0)
+      gzmsg << "[robot_importer_gui] Namespace '" << ns << "' injected into "
+            << injected << " plugin element(s).\n";
+    else
+      warningList << QStringLiteral(
+          "Namespace '%1' specified but no injectable ROS plugin elements were found. "
+          "The model may not use gazebo_ros/gz_ros plugins with <ros> support.")
+          .arg(QString::fromStdString(ns));
+
+    // Warn about limits: topic names hardcoded as <topic>...</topic> inside
+    // plugin configs are not rewritten; those stay as-is.
     warningList << QStringLiteral(
-        "ros_namespace '%1' is noted but NOT automatically injected into "
-        "plugin elements. Topics and services inside this robot model that "
-        "are hardcoded in the SDF remain unchanged. Set the namespace "
-        "manually in each plugin's <ros><namespace> block if needed.")
-        .arg(QString::fromStdString(_opts.rosNamespace));
+        "Topic names hardcoded inside plugin <topic> parameters are not "
+        "rewritten — only <ros><namespace> is updated.");
   }
 
-  // ---- frame_prefix: deferred to phase 5 ----
-  // Renaming every link and joint while keeping all cross-references
-  // consistent requires a full graph walk. Deferred to avoid silent bugs.
+  // ---- 3. frame_prefix: deferred to phase 5 ---------------------------------
   if (!_opts.framePrefix.empty())
   {
     warningList << QStringLiteral(
