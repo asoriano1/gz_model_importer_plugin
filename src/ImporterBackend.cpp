@@ -109,7 +109,10 @@ void ImporterBackend::setXacroNamespace(const QString &v)
   xacroNamespace_ = v;
   emit xacroNamespaceChanged();
   if (!currentFilePath_.isEmpty() && currentFileFormat_ == FileFormat::Xacro)
+  {
+    reexpanding_ = true;
     onFileReady(currentFilePath_, currentFileFormat_);
+  }
 }
 
 bool    ImporterBackend::hasXacroPrefixArg() const { return hasXacroPrefixArg_; }
@@ -121,7 +124,10 @@ void ImporterBackend::setXacroPrefix(const QString &v)
   xacroPrefix_ = v;
   emit xacroPrefixChanged();
   if (!currentFilePath_.isEmpty() && currentFileFormat_ == FileFormat::Xacro)
+  {
+    reexpanding_ = true;
     onFileReady(currentFilePath_, currentFileFormat_);
+  }
 }
 
 FileSelector      *ImporterBackend::fileSelector()      const { return fileSelector_.get(); }
@@ -549,7 +555,10 @@ void ImporterBackend::startFileLoad(const QString &path, FileFormat format)
   clearRuntimeHint();
 
   // Track current file for re-expansion when XACRO args change.
-  const bool isNewFile = (path != currentFilePath_);
+  // reexpanding_ is set by the XACRO arg setters — it means the same file
+  // is being re-processed, not a new user selection.
+  const bool isNewFile = !reexpanding_;
+  reexpanding_       = false;
   currentFilePath_   = path;
   currentFileFormat_ = format;
 

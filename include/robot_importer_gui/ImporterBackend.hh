@@ -166,6 +166,9 @@ class ImporterBackend : public QObject
   // Current file — stored to allow re-expansion when args change.
   private: QString     currentFilePath_;
   private: FileFormat  currentFileFormat_{FileFormat::Unknown};
+  // True when startFileLoad is triggered internally by a XACRO arg change,
+  // not by a new user file selection.
+  private: bool reexpanding_{false};
 
   // Set when a file is chosen; used by SdfUriRewriter.
   private: QString modelDir_;
