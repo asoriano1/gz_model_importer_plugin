@@ -119,15 +119,6 @@ Rectangle {
     onAccepted: fileSelector.onFileChosen(fileDialog.fileUrl.toString())
   }
 
-  FileDialog {
-    id: saveLaunchDialog
-    title: "Save launch file"
-    selectExisting: false
-    defaultSuffix: "py"
-    nameFilters: ["Python launch files (*.py)", "All files (*)"]
-    onAccepted: backend.saveLaunchFile(saveLaunchDialog.fileUrl.toString())
-  }
-
   // Auto-expand the log section when diagnostics become available.
   // Also auto-scroll so newly visible sections are reachable.
   Connections {
@@ -346,52 +337,6 @@ Rectangle {
           }
         }
 
-        // ---- Section 4: actions ----
-        RowLayout {
-          Layout.fillWidth: true; spacing: 8
-          visible: isImportable || isCancellable || isErrorState
-
-          Button {
-            text: "Import Model"
-            highlighted: true
-            font.pixelSize: 13
-            visible: isImportable
-            enabled: !isBusy
-            implicitWidth: 120
-            onClicked: {
-              // Collapse stale log output before starting a new import.
-              logsCard.logsExpanded = false
-              backend.importRobot()
-            }
-          }
-
-          Item { Layout.fillWidth: true }
-
-          // "Cancel Import" — only while an operation is actively cancellable.
-          Button {
-            text: "Cancel Import"
-            font.pixelSize: 12
-            visible: isCancellable
-            implicitWidth: 104
-            onClicked: {
-              logsCard.logsExpanded = false
-              // Always do a full reset so the panel returns to the minimal
-              // initial view (Idle).  reset() removes any live preview entity
-              // before transitioning, so the scene stays clean.
-              backend.reset()
-            }
-          }
-
-          // "Reset" in terminal-error states (SpawnFailed, ExpansionFailed, …)
-          Button {
-            text: "Reset"
-            font.pixelSize: 12
-            visible: isErrorState
-            implicitWidth: 66
-            onClicked: backend.reset()
-          }
-        }
-
         // ---- Section 5: import options (collapsed after Done or error) ----
         Rectangle {
           id: optionsCard
@@ -402,7 +347,7 @@ Rectangle {
           border.color: "#e0e0e0"; border.width: 1
           radius: 4
 
-          property bool poseExpanded: true
+          property bool poseExpanded: false
 
           ColumnLayout {
             id: optionsCol
@@ -574,20 +519,21 @@ Rectangle {
           }
         }
 
-        // ---- Section 7: ROS 2 runtime advisory (non-blocking) ----
+        // ---- Section 7: ROS 2 bridge hint (informational only) ----
         Rectangle {
-          id: runtimeCard
-          visible: backend.runtimeWarning.length > 0
+          id: runtimeHintCard
+          visible: backend.hasRuntimeHint
           Layout.fillWidth: true
-          implicitHeight: runtimeCol.implicitHeight + 16
-          color: "#fff3e0"
-          border.color: "#fb8c00"; border.width: 1
+          implicitHeight: hintCol.implicitHeight + 16
+          color: "#fff8e1"
+          border.color: "#ffb300"
+          border.width: 1
           radius: 4
 
-          property bool runExpanded: false
+          property bool detailsExpanded: false
 
           ColumnLayout {
-            id: runtimeCol
+            id: hintCol
             anchors {
               top: parent.top; left: parent.left; right: parent.right
               topMargin: 8; leftMargin: 8; rightMargin: 8
@@ -595,84 +541,53 @@ Rectangle {
             spacing: 4
 
             Label {
-              text: "ROS 2 runtime likely required"
+              text: "ROS 2 bridge hint"
               font.bold: true; font.pixelSize: 12; color: "#e65100"
             }
 
             Label {
-              text: backend.runtimeWarning
-              font.pixelSize: 11; color: "#bf360c"
+              text: backend.runtimeHint
+              font.pixelSize: 11; color: "#4e342e"
               wrapMode: Text.Wrap; Layout.fillWidth: true
             }
 
-            RowLayout {
-              spacing: 6; Layout.fillWidth: true
+            // Details toggle
+            Item {
+              Layout.fillWidth: true
+              implicitHeight: hintDetailsToggle.implicitHeight + 2
+              visible: backend.runtimeHintDetails.length > 0
 
-              Button {
-                text: "Copy command"
-                font.pixelSize: 11; implicitWidth: 110
-                onClicked: backend.copyLaunchCommand()
+              Label {
+                id: hintDetailsToggle
+                anchors.verticalCenter: parent.verticalCenter
+                text: (runtimeHintCard.detailsExpanded ? "▼" : "▶") + "  Detected items"
+                font.pixelSize: 11; color: "#555"
               }
-
-              Button {
-                text: "Save .py"
-                font.pixelSize: 11; implicitWidth: 70
-                onClicked: saveLaunchDialog.open()
+              MouseArea {
+                anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                onClicked: runtimeHintCard.detailsExpanded = !runtimeHintCard.detailsExpanded
               }
-
-              Button {
-                text: (runtimeCard.runExpanded ? "▼" : "▶") + " Run…"
-                font.pixelSize: 11; implicitWidth: 72
-                onClicked: runtimeCard.runExpanded = !runtimeCard.runExpanded
-              }
-
-              Item { Layout.fillWidth: true }
             }
 
-            // Collapsible run section
-            ColumnLayout {
-              visible: runtimeCard.runExpanded
+            Rectangle {
+              visible: runtimeHintCard.detailsExpanded && backend.runtimeHintDetails.length > 0
               Layout.fillWidth: true
-              spacing: 4
+              implicitHeight: hintDetailsLabel.implicitHeight + 8
+              color: "#fff3e0"; radius: 3; border.color: "#ffe082"; border.width: 1
 
-              TextField {
-                id: launchCmdField
-                text: backend.customLaunchCommand.length > 0
-                      ? backend.customLaunchCommand
-                      : backend.suggestedLaunchCommand
-                font.pixelSize: 11; font.family: "monospace"
-                Layout.fillWidth: true
-                onEditingFinished: backend.setCustomLaunchCommand(text)
-
-                // Sync when the backend re-generates the command (new file).
-                Connections {
-                  target: backend
-                  function onCustomLaunchCommandChanged() {
-                    if (!launchCmdField.activeFocus)
-                      launchCmdField.text = backend.customLaunchCommand.length > 0
-                                            ? backend.customLaunchCommand
-                                            : backend.suggestedLaunchCommand
-                  }
-                }
+              Label {
+                id: hintDetailsLabel
+                anchors { left: parent.left; right: parent.right; top: parent.top; margins: 4 }
+                text: backend.runtimeHintDetails
+                font.pixelSize: 10; font.family: "monospace"
+                color: "#4e342e"; wrapMode: Text.Wrap
               }
+            }
 
-              RowLayout {
-                spacing: 6
-
-                Button {
-                  text: backend.launchRunning ? "Stop" : "Run"
-                  font.pixelSize: 11; implicitWidth: 60
-                  onClicked: backend.launchRunning
-                             ? backend.stopLaunchCommand()
-                             : backend.runLaunchCommand()
-                }
-
-                Label {
-                  visible: backend.launchRunning
-                  text: "● Running"
-                  font.pixelSize: 11; color: "#2e7d32"; font.bold: true
-                }
-              }
+            Label {
+              text: "Load the 'ROS 2 Bridge Manager' Gazebo GUI plugin to inspect topics and create bridges."
+              font.pixelSize: 10; font.italic: true; color: "#795548"
+              wrapMode: Text.Wrap; Layout.fillWidth: true
             }
           }
         }
@@ -773,6 +688,48 @@ Rectangle {
         }
 
         // Bottom padding
+        // ---- Section 4 (bottom): actions ----
+        RowLayout {
+          Layout.fillWidth: true; spacing: 8
+          visible: isImportable || isCancellable || isErrorState
+
+          Button {
+            text: "Import Model"
+            highlighted: true
+            font.pixelSize: 13
+            visible: isImportable
+            enabled: !isBusy
+            implicitWidth: 120
+            onClicked: {
+              logsCard.logsExpanded = false
+              backend.importRobot()
+            }
+          }
+
+          Item { Layout.fillWidth: true }
+
+          // "Cancel Import" — only while an operation is actively cancellable.
+          Button {
+            text: "Cancel Import"
+            font.pixelSize: 12
+            visible: isCancellable
+            implicitWidth: 104
+            onClicked: {
+              logsCard.logsExpanded = false
+              backend.reset()
+            }
+          }
+
+          // "Reset" in terminal-error states (SpawnFailed, ExpansionFailed, …)
+          Button {
+            text: "Reset"
+            font.pixelSize: 12
+            visible: isErrorState
+            implicitWidth: 66
+            onClicked: backend.reset()
+          }
+        }
+
         Item { implicitHeight: 4 }
       }
     }

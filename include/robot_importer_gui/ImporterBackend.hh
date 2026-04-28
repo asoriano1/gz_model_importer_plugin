@@ -12,8 +12,6 @@
 #include "robot_importer_gui/ImporterState.hh"
 #include "robot_importer_gui/FileLoader.hh"
 
-class QProcess;
-
 namespace robot_importer_gui
 {
 
@@ -46,11 +44,10 @@ class ImporterBackend : public QObject
   Q_PROPERTY(QString worldName       READ worldName       NOTIFY worldNameChanged)
   Q_PROPERTY(QString preflightReport READ preflightReport NOTIFY preflightReportChanged)
 
-  Q_PROPERTY(QString runtimeWarning         READ runtimeWarning         NOTIFY runtimeWarningChanged)
-  Q_PROPERTY(QString suggestedLaunchContent READ suggestedLaunchContent NOTIFY runtimeWarningChanged)
-  Q_PROPERTY(QString suggestedLaunchCommand READ suggestedLaunchCommand NOTIFY runtimeWarningChanged)
-  Q_PROPERTY(QString customLaunchCommand    READ customLaunchCommand    NOTIFY customLaunchCommandChanged)
-  Q_PROPERTY(bool    launchRunning          READ launchRunning          NOTIFY launchRunningChanged)
+  // ---- Lightweight ROS 2 hint (informational only, no process management) ----
+  Q_PROPERTY(bool    hasRuntimeHint     READ hasRuntimeHint     NOTIFY runtimeHintChanged)
+  Q_PROPERTY(QString runtimeHint        READ runtimeHint        NOTIFY runtimeHintChanged)
+  Q_PROPERTY(QString runtimeHintDetails READ runtimeHintDetails NOTIFY runtimeHintChanged)
 
   Q_PROPERTY(robot_importer_gui::FileSelector   *fileSelector
              READ fileSelector   CONSTANT)
@@ -65,16 +62,14 @@ class ImporterBackend : public QObject
   public: int     stateInt()   const;
   public: QString stateName()  const;
   public: bool    isBusy()     const;
-  public: QString lastError()       const;
-  public: QString lastWarning()     const;
-  public: QString worldName()       const;
-  public: QString preflightReport() const;
+  public: QString lastError()        const;
+  public: QString lastWarning()      const;
+  public: QString worldName()        const;
+  public: QString preflightReport()  const;
 
-  public: QString runtimeWarning()         const;
-  public: QString suggestedLaunchContent() const;
-  public: QString suggestedLaunchCommand() const;
-  public: QString customLaunchCommand()    const;
-  public: bool    launchRunning()          const;
+  public: bool    hasRuntimeHint()     const;
+  public: QString runtimeHint()        const;
+  public: QString runtimeHintDetails() const;
 
   public: FileSelector      *fileSelector()      const;
   public: ImportOptions     *importOptions()     const;
@@ -86,20 +81,12 @@ class ImporterBackend : public QObject
   public: Q_INVOKABLE void cancelPreview();
   public: Q_INVOKABLE void setXacroArgs(const QStringList &_args);
 
-  public: Q_INVOKABLE void setCustomLaunchCommand(const QString &cmd);
-  public: Q_INVOKABLE void copyLaunchCommand();
-  public: Q_INVOKABLE bool saveLaunchFile(const QString &path);
-  public: Q_INVOKABLE void runLaunchCommand();
-  public: Q_INVOKABLE void stopLaunchCommand();
-
   signals: void stateChanged();
   signals: void lastErrorChanged();
   signals: void lastWarningChanged();
   signals: void worldNameChanged();
   signals: void preflightReportChanged();
-  signals: void runtimeWarningChanged();
-  signals: void customLaunchCommandChanged();
-  signals: void launchRunningChanged();
+  signals: void runtimeHintChanged();
 
   // ---- Collaborator slots ----
   private slots:
@@ -116,7 +103,7 @@ class ImporterBackend : public QObject
   void onSpawnComplete(const QString &name);
   void onSpawnFailed(const QString &error);
   void onGazeboPoseMoved(double x, double y, double z,
-                         double roll, double pitch, double yaw);
+                          double roll, double pitch, double yaw);
   void onPoseDebounceTimeout();
 
   // ---- Internal helpers ----
@@ -130,7 +117,7 @@ class ImporterBackend : public QObject
                                robot_importer_gui::FileFormat format);
   private: void resetPose();
   private: void assignUniqueName(const QString &filePath);
-  private: void clearRuntimeState();
+  private: void clearRuntimeHint();
   static QString extractModelBaseName(const QString &filePath);
 
   private: ImporterState state_{ImporterState::Idle};
@@ -141,14 +128,9 @@ class ImporterBackend : public QObject
   private: QString preflightReport_;
   private: QStringList xacroArgs_;
 
-  // Runtime analysis results — populated in onLoadComplete(), cleared in
-  // startFileLoad() and reset().
-  private: QString runtimeWarning_;
-  private: QString suggestedLaunchContent_;
-  private: QString suggestedLaunchCommand_;
-  private: QString customLaunchCommand_;
-  private: bool    launchRunning_{false};
-  private: QProcess *launchProcess_{nullptr};
+  // ROS 2 hint — populated in onLoadComplete(), cleared on reset/new load.
+  private: QString runtimeHint_;
+  private: QString runtimeHintDetails_;
 
   // Set when a file is chosen; used by SdfUriRewriter.
   private: QString modelDir_;
@@ -158,19 +140,18 @@ class ImporterBackend : public QObject
   private: bool updatingFromGazebo_{false};
   private: QTimer *poseDebounceTimer_{nullptr};
 
-  // Deferred file load: when a new file is selected while preview is active,
-  // we cancel the preview first and store the pending file here.
+  // Deferred file load.
   private: QString pendingFilePath_;
   private: FileFormat pendingFileFormat_{FileFormat::Unknown};
 
-  // Per-session counters for unique name generation (base → next index).
+  // Per-session counters for unique name generation.
   private: QMap<QString, int> nameCounters_;
 
-  private: std::unique_ptr<FileSelector>       fileSelector_;
-  private: std::unique_ptr<ImportOptions>      importOptions_;
-  private: std::unique_ptr<ModelLoader>        modelLoader_;
-  private: std::unique_ptr<PreviewController>  previewController_;
-  private: std::unique_ptr<GzSpawnClient>      spawnClient_;
+  private: std::unique_ptr<FileSelector>      fileSelector_;
+  private: std::unique_ptr<ImportOptions>     importOptions_;
+  private: std::unique_ptr<ModelLoader>       modelLoader_;
+  private: std::unique_ptr<PreviewController> previewController_;
+  private: std::unique_ptr<GzSpawnClient>     spawnClient_;
 };
 
 }  // namespace robot_importer_gui
