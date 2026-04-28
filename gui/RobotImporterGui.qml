@@ -364,19 +364,11 @@ Rectangle {
               columns: 2; columnSpacing: 8; rowSpacing: 4
               Layout.fillWidth: true
 
-              Label { text: "Name";       font.pixelSize: 12; color: "#555" }
+              Label { text: "Name";  font.pixelSize: 12; color: "#555" }
               TextField {
                 text: importOptions.instanceName
                 font.pixelSize: 12; Layout.fillWidth: true
                 onEditingFinished: importOptions.instanceName = text
-              }
-
-              Label { text: "Namespace";  font.pixelSize: 12; color: "#555" }
-              TextField {
-                text: importOptions.rosNamespace
-                placeholderText: "(none)"
-                font.pixelSize: 12; Layout.fillWidth: true
-                onEditingFinished: importOptions.rosNamespace = text
               }
             }
 
@@ -493,29 +485,6 @@ Rectangle {
                 wrapMode: Text.Wrap; Layout.fillWidth: true
               }
             }
-          }
-        }
-
-        // ---- Section 6: namespace / injection caveat ----
-        Rectangle {
-          visible: showOptions
-          Layout.fillWidth: true
-          implicitHeight: noteText.implicitHeight + 14
-          color: "#fff8e1"
-          border.color: "#ffe082"; border.width: 1
-          radius: 4
-
-          Label {
-            id: noteText
-            anchors {
-              top: parent.top; left: parent.left; right: parent.right
-              topMargin: 7; leftMargin: 8; rightMargin: 8
-            }
-            text: "Namespace injection applies only to recognised ROS plugin elements. " +
-                  "Hardcoded topics and plugin-internal names are left untouched."
-            font.pixelSize: 10; font.italic: true
-            wrapMode: Text.Wrap
-            color: "#5d4037"
           }
         }
 

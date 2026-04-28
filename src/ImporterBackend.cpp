@@ -444,9 +444,7 @@ std::string ImporterBackend::applyOptionsToSdf()
 {
   QString warnings;
   InstanceRewriter::Options opts{
-      importOptions_->instanceName().toStdString(),
-      importOptions_->rosNamespace().toStdString(),
-      importOptions_->framePrefix().toStdString()};
+      importOptions_->instanceName().toStdString()};
   const std::string rewritten = InstanceRewriter::rewrite(
       currentSdf_.toStdString(), opts, warnings);
   if (!warnings.isEmpty()) setWarning(warnings);
