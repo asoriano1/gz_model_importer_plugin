@@ -547,13 +547,20 @@ void ImporterBackend::startFileLoad(const QString &path, FileFormat format)
   emit lastWarningChanged(); emit preflightReportChanged();
 
   clearRuntimeHint();
-  resetPose();
-  assignUniqueName(path);
 
-  // Track current file for re-expansion when namespace changes.
+  // Track current file for re-expansion when XACRO args change.
   const bool isNewFile = (path != currentFilePath_);
   currentFilePath_   = path;
   currentFileFormat_ = format;
+
+  // Only reset pose and assign a new name for genuinely new files.
+  // Re-expansions (triggered by namespace/prefix changes) keep the
+  // existing name and pose so the user's edits are preserved.
+  if (isNewFile)
+  {
+    resetPose();
+    assignUniqueName(path);
+  }
 
   gzmsg << "[robot_importer_gui] Loading: " << path.toStdString()
         << "  modelDir=" << modelDir_.toStdString() << "\n";
@@ -566,24 +573,28 @@ void ImporterBackend::startFileLoad(const QString &path, FileFormat format)
   {
     const QMap<QString, QString> discovered = XacroExpander::discoverArgs(path);
 
-    // Detect namespace and prefix args; initialise override values on new file.
+    // Detect namespace and prefix args.
     const bool hasNs  = discovered.contains(QStringLiteral("namespace"));
     const bool hasPfx = discovered.contains(QStringLiteral("prefix"));
+
+    // On a new file, derive sequential defaults from the assigned instance
+    // name rather than from the XACRO defaults.  The instance name is already
+    // unique (sensor_test_robot_1, _2, …), so namespace and prefix are too.
+    // prefix gets a trailing '_' — the standard ROS convention.
+    bool nsChanged  = false;
+    bool pfxChanged = false;
     if (isNewFile)
     {
-      xacroNamespace_ = hasNs  ? discovered.value(QStringLiteral("namespace")) : QString{};
-      xacroPrefix_    = hasPfx ? discovered.value(QStringLiteral("prefix"))    : QString{};
+      const QString inst = importOptions_->instanceName();
+      const QString newNs  = hasNs  ? inst        : QString{};
+      const QString newPfx = hasPfx ? inst + "_"  : QString{};
+      if (newNs != xacroNamespace_)  { xacroNamespace_ = newNs;  nsChanged  = true; }
+      if (newPfx != xacroPrefix_)    { xacroPrefix_    = newPfx; pfxChanged = true; }
     }
-    if (hasNs != hasXacroNamespaceArg_)
-    {
-      hasXacroNamespaceArg_ = hasNs;
-      emit xacroNamespaceChanged();
-    }
-    if (hasPfx != hasXacroPrefixArg_)
-    {
-      hasXacroPrefixArg_ = hasPfx;
-      emit xacroPrefixChanged();
-    }
+    if (hasNs  != hasXacroNamespaceArg_) { hasXacroNamespaceArg_ = hasNs;  nsChanged  = true; }
+    if (hasPfx != hasXacroPrefixArg_)   { hasXacroPrefixArg_    = hasPfx; pfxChanged = true; }
+    if (nsChanged)  emit xacroNamespaceChanged();
+    if (pfxChanged) emit xacroPrefixChanged();
 
     // Build effective args: external xacroArgs_ first, then UI overrides
     // (always win over XACRO defaults), then remaining discovered defaults.
