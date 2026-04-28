@@ -370,6 +370,17 @@ Rectangle {
                 font.pixelSize: 12; Layout.fillWidth: true
                 onEditingFinished: importOptions.instanceName = text
               }
+
+              Label {
+                text: "Namespace"; font.pixelSize: 12; color: "#555"
+                visible: backend.hasXacroNamespaceArg
+              }
+              TextField {
+                visible: backend.hasXacroNamespaceArg
+                text: backend.xacroNamespace
+                font.pixelSize: 12; Layout.fillWidth: true
+                onEditingFinished: backend.xacroNamespace = text
+              }
             }
 
             // ---- Pose toggle ----

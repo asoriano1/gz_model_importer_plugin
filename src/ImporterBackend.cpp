@@ -100,6 +100,18 @@ bool    ImporterBackend::hasRuntimeHint()     const { return !runtimeHint_.isEmp
 QString ImporterBackend::runtimeHint()        const { return runtimeHint_; }
 QString ImporterBackend::runtimeHintDetails() const { return runtimeHintDetails_; }
 
+bool    ImporterBackend::hasXacroNamespaceArg() const { return hasXacroNamespaceArg_; }
+QString ImporterBackend::xacroNamespace()       const { return xacroNamespace_; }
+
+void ImporterBackend::setXacroNamespace(const QString &v)
+{
+  if (xacroNamespace_ == v) return;
+  xacroNamespace_ = v;
+  emit xacroNamespaceChanged();
+  if (!currentFilePath_.isEmpty() && currentFileFormat_ == FileFormat::Xacro)
+    onFileReady(currentFilePath_, currentFileFormat_);
+}
+
 FileSelector      *ImporterBackend::fileSelector()      const { return fileSelector_.get(); }
 ImportOptions     *ImporterBackend::importOptions()     const { return importOptions_.get(); }
 PreviewController *ImporterBackend::previewController() const { return previewController_.get(); }
@@ -135,6 +147,13 @@ void ImporterBackend::reset()
   emit preflightReportChanged();
 
   clearRuntimeHint();
+
+  hasXacroNamespaceArg_ = false;
+  xacroNamespace_.clear();
+  currentFilePath_.clear();
+  currentFileFormat_ = FileFormat::Unknown;
+  emit xacroNamespaceChanged();
+
   setState(ImporterState::Idle);
 }
 
@@ -516,6 +535,11 @@ void ImporterBackend::startFileLoad(const QString &path, FileFormat format)
   resetPose();
   assignUniqueName(path);
 
+  // Track current file for re-expansion when namespace changes.
+  const bool isNewFile = (path != currentFilePath_);
+  currentFilePath_   = path;
+  currentFileFormat_ = format;
+
   gzmsg << "[robot_importer_gui] Loading: " << path.toStdString()
         << "  modelDir=" << modelDir_.toStdString() << "\n";
 
@@ -526,23 +550,57 @@ void ImporterBackend::startFileLoad(const QString &path, FileFormat format)
   if (format == FileFormat::Xacro)
   {
     const QMap<QString, QString> discovered = XacroExpander::discoverArgs(path);
+
+    // Detect namespace arg and initialise override value.
+    const bool hasNs = discovered.contains(QStringLiteral("namespace"));
+    if (isNewFile)
+    {
+      // New file: reset namespace to the XACRO default (or empty).
+      xacroNamespace_ = hasNs ? discovered.value(QStringLiteral("namespace")) : QString{};
+    }
+    if (hasNs != hasXacroNamespaceArg_)
+    {
+      hasXacroNamespaceArg_ = hasNs;
+      emit xacroNamespaceChanged();
+    }
+
+    // Build effective args: external xacroArgs_ first, then UI namespace
+    // override (always wins over the XACRO default), then remaining defaults.
+    QSet<QString> coveredArgs;
+    for (const QString &a : xacroArgs_)
+    {
+      const int sep = a.indexOf(QStringLiteral(":="));
+      if (sep > 0) coveredArgs.insert(a.left(sep));
+    }
+
+    if (hasNs && !xacroNamespace_.isEmpty())
+    {
+      coveredArgs.insert(QStringLiteral("namespace"));
+      effectiveArgs << (QStringLiteral("namespace:=") + xacroNamespace_);
+    }
+
+    for (auto it = discovered.cbegin(); it != discovered.cend(); ++it)
+      if (!coveredArgs.contains(it.key()))
+        effectiveArgs << (it.key() + QStringLiteral(":=") + it.value());
+
     if (!discovered.isEmpty())
     {
-      QSet<QString> userArgNames;
-      for (const QString &a : xacroArgs_)
-      {
-        const int sep = a.indexOf(QStringLiteral(":="));
-        if (sep > 0) userArgNames.insert(a.left(sep));
-      }
-      for (auto it = discovered.cbegin(); it != discovered.cend(); ++it)
-        if (!userArgNames.contains(it.key()))
-          effectiveArgs << (it.key() + QStringLiteral(":=") + it.value());
-
-      gzmsg << "[robot_importer_gui] XACRO args discovered: " << discovered.size();
+      gzmsg << "[robot_importer_gui] XACRO args effective:";
       for (const QString &a : effectiveArgs) gzmsg << " [" << a.toStdString() << "]";
       gzmsg << "\n";
     }
   }
+  else
+  {
+    // Non-XACRO file: clear namespace state.
+    if (hasXacroNamespaceArg_)
+    {
+      hasXacroNamespaceArg_ = false;
+      xacroNamespace_.clear();
+      emit xacroNamespaceChanged();
+    }
+  }
+
   modelLoader_->load(path, format, effectiveArgs);
 }
 
