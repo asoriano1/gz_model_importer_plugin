@@ -337,52 +337,6 @@ Rectangle {
           }
         }
 
-        // ---- Section 4: actions ----
-        RowLayout {
-          Layout.fillWidth: true; spacing: 8
-          visible: isImportable || isCancellable || isErrorState
-
-          Button {
-            text: "Import Model"
-            highlighted: true
-            font.pixelSize: 13
-            visible: isImportable
-            enabled: !isBusy
-            implicitWidth: 120
-            onClicked: {
-              // Collapse stale log output before starting a new import.
-              logsCard.logsExpanded = false
-              backend.importRobot()
-            }
-          }
-
-          Item { Layout.fillWidth: true }
-
-          // "Cancel Import" — only while an operation is actively cancellable.
-          Button {
-            text: "Cancel Import"
-            font.pixelSize: 12
-            visible: isCancellable
-            implicitWidth: 104
-            onClicked: {
-              logsCard.logsExpanded = false
-              // Always do a full reset so the panel returns to the minimal
-              // initial view (Idle).  reset() removes any live preview entity
-              // before transitioning, so the scene stays clean.
-              backend.reset()
-            }
-          }
-
-          // "Reset" in terminal-error states (SpawnFailed, ExpansionFailed, …)
-          Button {
-            text: "Reset"
-            font.pixelSize: 12
-            visible: isErrorState
-            implicitWidth: 66
-            onClicked: backend.reset()
-          }
-        }
-
         // ---- Section 5: import options (collapsed after Done or error) ----
         Rectangle {
           id: optionsCard
@@ -734,6 +688,48 @@ Rectangle {
         }
 
         // Bottom padding
+        // ---- Section 4 (bottom): actions ----
+        RowLayout {
+          Layout.fillWidth: true; spacing: 8
+          visible: isImportable || isCancellable || isErrorState
+
+          Button {
+            text: "Import Model"
+            highlighted: true
+            font.pixelSize: 13
+            visible: isImportable
+            enabled: !isBusy
+            implicitWidth: 120
+            onClicked: {
+              logsCard.logsExpanded = false
+              backend.importRobot()
+            }
+          }
+
+          Item { Layout.fillWidth: true }
+
+          // "Cancel Import" — only while an operation is actively cancellable.
+          Button {
+            text: "Cancel Import"
+            font.pixelSize: 12
+            visible: isCancellable
+            implicitWidth: 104
+            onClicked: {
+              logsCard.logsExpanded = false
+              backend.reset()
+            }
+          }
+
+          // "Reset" in terminal-error states (SpawnFailed, ExpansionFailed, …)
+          Button {
+            text: "Reset"
+            font.pixelSize: 12
+            visible: isErrorState
+            implicitWidth: 66
+            onClicked: backend.reset()
+          }
+        }
+
         Item { implicitHeight: 4 }
       }
     }
