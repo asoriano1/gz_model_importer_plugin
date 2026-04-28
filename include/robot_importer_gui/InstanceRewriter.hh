@@ -9,32 +9,15 @@ namespace robot_importer_gui
 
 /// SDF rewriter for multi-instance support.
 ///
-/// Rewrites performed in order:
-///
-///  1. Renames the top-level <model name="..."> to instanceName.
-///     This makes the Gazebo entity name unique.
-///     Native Gazebo sensor topics embed the model name
-///     (/model/<name>/link/.../sensor/...) so they become unique too.
-///
-///  2. Injects rosNamespace into plugin <ros><namespace> elements:
-///       - If a <plugin> already has a <ros> child, the <namespace> inside it
-///         is created or overwritten with the normalised namespace value.
-///       - If a <plugin> has no <ros> child but its filename matches a known
-///         gazebo_ros / gz_ros pattern, a <ros><namespace/></ros> block is
-///         injected as the first child.
-///     The namespace is normalised to start with '/'.
-///
-/// Limitations:
-///   - Topic names hardcoded as <topic>...</topic> inside plugin configs are
-///     not rewritten; only <ros><namespace> is updated.
-///   - frame_prefix (TF link/joint renaming) is not yet implemented.
+/// Renames the top-level <model name="..."> to instanceName.
+/// Native Gazebo sensor topics embed the model name
+/// (/model/<name>/link/.../sensor/...) so they become unique per instance.
+/// ROS 2 topic mapping is handled externally by the bridge manager.
 struct InstanceRewriter
 {
   struct Options
   {
-    std::string instanceName;   // renames <model name="..."> — guaranteed
-    std::string rosNamespace;   // noted in warning; NOT injected into plugins
-    std::string framePrefix;    // noted in warning; NOT applied (phase 5)
+    std::string instanceName;  // renames <model name="...">
   };
 
   /// Returns rewritten SDF, or original SDF unchanged if rewriting fails.
