@@ -1,13 +1,13 @@
-#ifndef ROBOT_IMPORTER_GUI_PREVIEW_CONTROLLER_HH_
-#define ROBOT_IMPORTER_GUI_PREVIEW_CONTROLLER_HH_
+#ifndef GZ_MODEL_IMPORTER_GUI_PREVIEW_CONTROLLER_HH_
+#define GZ_MODEL_IMPORTER_GUI_PREVIEW_CONTROLLER_HH_
 
 #include <QObject>
 #include <QString>
 #include <memory>
 
-#include "robot_importer_gui/GzSpawnClient.hh"
+#include "gz_model_importer_gui/GzSpawnClient.hh"
 
-namespace robot_importer_gui
+namespace gz_model_importer_gui
 {
 
 /// Manages the modal preview mode lifecycle.
@@ -115,6 +115,6 @@ class PreviewController : public QObject
   std::unique_ptr<GzSpawnClient> spawnClient_;
 };
 
-}  // namespace robot_importer_gui
+}  // namespace gz_model_importer_gui
 
 #endif

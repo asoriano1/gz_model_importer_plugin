@@ -1,4 +1,4 @@
-# Test models for robot_importer_gui
+# Test models for gz_model_importer_gui
 
 Minimal robot descriptions used to exercise specific importer code paths.
 
@@ -26,7 +26,7 @@ Minimal robot descriptions used to exercise specific importer code paths.
 ### xacro_with_defaults.urdf.xacro
 **Expected console:**
 ```
-[robot_importer_gui] XACRO args discovered: 4, effective arg list:
+[gz_model_importer_gui] XACRO args discovered: 4, effective arg list:
   [robot_name:=test_robot] [prefix:=] [body_color:=0.2 0.6 0.2 1.0] [body_mass:=10.0]
 ```
 **Expected preflight:** no plugins, no unresolved URIs.
@@ -37,7 +37,7 @@ Minimal robot descriptions used to exercise specific importer code paths.
 ### xacro_mixed_args.urdf.xacro
 **Expected console:**
 ```
-[robot_importer_gui] XACRO args discovered: 3, effective arg list:
+[gz_model_importer_gui] XACRO args discovered: 3, effective arg list:
   [prefix:=] [use_arm:=false] [robot_id:=]
 ```
 **Expected preview:** flat chassis only (`use_arm:=false` disables the arm block).

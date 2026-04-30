@@ -1,5 +1,5 @@
-#ifndef ROBOT_IMPORTER_GUI_IMPORTER_PLUGIN_HH_
-#define ROBOT_IMPORTER_GUI_IMPORTER_PLUGIN_HH_
+#ifndef GZ_MODEL_IMPORTER_GUI_IMPORTER_PLUGIN_HH_
+#define GZ_MODEL_IMPORTER_GUI_IMPORTER_PLUGIN_HH_
 
 #include <atomic>
 #include <memory>
@@ -12,7 +12,7 @@
 #include <gz/math/Pose3.hh>
 #include <gz/math/Vector3.hh>
 
-namespace robot_importer_gui
+namespace gz_model_importer_gui
 {
 
 class ImporterBackend;
@@ -96,6 +96,6 @@ class RobotImporterGui : public gz::gui::Plugin
   std::atomic<bool> selectionPending_{false};
 };
 
-}  // namespace robot_importer_gui
+}  // namespace gz_model_importer_gui
 
 #endif

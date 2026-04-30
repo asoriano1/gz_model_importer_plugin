@@ -1,10 +1,10 @@
-#ifndef ROBOT_IMPORTER_GUI_FILE_LOADER_HH_
-#define ROBOT_IMPORTER_GUI_FILE_LOADER_HH_
+#ifndef GZ_MODEL_IMPORTER_GUI_FILE_LOADER_HH_
+#define GZ_MODEL_IMPORTER_GUI_FILE_LOADER_HH_
 
 #include <string>
 #include <QString>
 
-namespace robot_importer_gui
+namespace gz_model_importer_gui
 {
 
 enum class FileFormat
@@ -37,6 +37,6 @@ struct FileLoader
   static std::string readContent(const QString &_path, QString &_errorOut);
 };
 
-}  // namespace robot_importer_gui
+}  // namespace gz_model_importer_gui
 
 #endif

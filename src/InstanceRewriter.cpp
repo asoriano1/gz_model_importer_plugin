@@ -1,9 +1,9 @@
-#include "robot_importer_gui/InstanceRewriter.hh"
+#include "gz_model_importer_gui/InstanceRewriter.hh"
 
 #include <QString>
 #include <tinyxml2.h>
 
-namespace robot_importer_gui
+namespace gz_model_importer_gui
 {
 
 std::string InstanceRewriter::rewrite(const std::string &_sdf,
@@ -38,4 +38,4 @@ std::string InstanceRewriter::rewrite(const std::string &_sdf,
   return printer.CStr();
 }
 
-}  // namespace robot_importer_gui
+}  // namespace gz_model_importer_gui

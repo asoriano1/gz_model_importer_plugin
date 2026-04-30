@@ -1,10 +1,10 @@
-#ifndef ROBOT_IMPORTER_GUI_URDF_TO_SDF_HH_
-#define ROBOT_IMPORTER_GUI_URDF_TO_SDF_HH_
+#ifndef GZ_MODEL_IMPORTER_GUI_URDF_TO_SDF_HH_
+#define GZ_MODEL_IMPORTER_GUI_URDF_TO_SDF_HH_
 
 #include <string>
 #include <QString>
 
-namespace robot_importer_gui
+namespace gz_model_importer_gui
 {
 
 /// Converts a URDF XML string (or SDF string) to a validated SDF XML string
@@ -18,6 +18,6 @@ struct UrdfToSdf
                              QString &_errorOut);
 };
 
-}  // namespace robot_importer_gui
+}  // namespace gz_model_importer_gui
 
 #endif

@@ -1,4 +1,4 @@
-#include "robot_importer_gui/PreviewController.hh"
+#include "gz_model_importer_gui/PreviewController.hh"
 
 #include <atomic>
 #include <functional>
@@ -11,7 +11,7 @@
 #include <gz/transport/Node.hh>
 #include <tinyxml2.h>
 
-namespace robot_importer_gui
+namespace gz_model_importer_gui
 {
 
 // ============================================================
@@ -66,7 +66,7 @@ void PreviewController::spawnPreview(const QString &_worldName,
 
   preparedSdf_ = preparePreviewSdf(_sdfContent);
 
-  gzmsg << "[robot_importer_gui] Spawning preview '"
+  gzmsg << "[gz_model_importer_gui] Spawning preview '"
         << previewEntityName_.toStdString()
         << "' at (" << _pose.x << ", " << _pose.y << ", " << _pose.z << ").\n";
 
@@ -128,14 +128,14 @@ void PreviewController::onSpawnComplete(const QString &_name)
 
   subscribeToPoseInfo();
 
-  gzmsg << "[robot_importer_gui] Preview entity spawned: "
+  gzmsg << "[gz_model_importer_gui] Preview entity spawned: "
         << _name.toStdString() << "\n";
   emit previewSpawned(_name);
 }
 
 void PreviewController::onSpawnFailed(const QString &_error)
 {
-  gzwarn << "[robot_importer_gui] Preview spawn failed: "
+  gzwarn << "[gz_model_importer_gui] Preview spawn failed: "
          << _error.toStdString() << "\n";
   clearPreviewState();
   emit previewFailed(_error);
@@ -158,7 +158,7 @@ void PreviewController::onRemoveComplete(const QString & /*_name*/)
 
 void PreviewController::onRemoveFailed(const QString &_error)
 {
-  gzwarn << "[robot_importer_gui] Preview removal failed: "
+  gzwarn << "[gz_model_importer_gui] Preview removal failed: "
          << _error.toStdString() << ". Proceeding with state cleanup.\n";
   emit removeWarning(
       QStringLiteral("Preview entity removal failed (%1). "
@@ -179,7 +179,7 @@ void PreviewController::onRemoveFailed(const QString &_error)
 
 void PreviewController::onPoseUpdateFailed(const QString &_error)
 {
-  gzwarn << "[robot_importer_gui] " << _error.toStdString() << "\n";
+  gzwarn << "[gz_model_importer_gui] " << _error.toStdString() << "\n";
   emit removeWarning(_error);
 }
 
@@ -231,7 +231,7 @@ void PreviewController::subscribeToPoseInfo()
       }
     });
 
-  gzmsg << "[robot_importer_gui] Subscribed to " << topic << "\n";
+  gzmsg << "[gz_model_importer_gui] Subscribed to " << topic << "\n";
 }
 
 void PreviewController::unsubscribeFromPoseInfo()
@@ -312,4 +312,4 @@ QString PreviewController::preparePreviewSdf(const QString &_sdf)
   return QString::fromUtf8(printer.CStr());
 }
 
-}  // namespace robot_importer_gui
+}  // namespace gz_model_importer_gui

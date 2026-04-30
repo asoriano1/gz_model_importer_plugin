@@ -1,4 +1,4 @@
-#include "robot_importer_gui/GzSpawnClient.hh"
+#include "gz_model_importer_gui/GzSpawnClient.hh"
 
 #include <atomic>
 #include <chrono>
@@ -27,7 +27,7 @@
 #include <gz/msgs/world_control.pb.h>
 #include <gz/msgs/world_stats.pb.h>
 
-namespace robot_importer_gui
+namespace gz_model_importer_gui
 {
 
 // ============================================================
@@ -108,7 +108,7 @@ bool GzSpawnClient::queryWorldPauseState(const QString &_worldName)
 
   if (!ok)
   {
-    gzwarn << "[robot_importer_gui] Failed to subscribe to " << topic
+    gzwarn << "[gz_model_importer_gui] Failed to subscribe to " << topic
            << ". Assuming world is running (paused=false).\n";
     return false;
   }
@@ -119,7 +119,7 @@ bool GzSpawnClient::queryWorldPauseState(const QString &_worldName)
 
   if (timedOut)
   {
-    gzwarn << "[robot_importer_gui] Timed out waiting for " << topic
+    gzwarn << "[gz_model_importer_gui] Timed out waiting for " << topic
            << ". Assuming world is running (paused=false).\n";
     return false;
   }
@@ -259,7 +259,7 @@ QSet<QString> GzSpawnClient::queryModelNames(const QString &_worldName)
                                    rep, result);
   if (!called || !result)
   {
-    gzwarn << "[robot_importer_gui] queryModelNames: scene/info call failed "
+    gzwarn << "[gz_model_importer_gui] queryModelNames: scene/info call failed "
            << "for world '" << _worldName.toStdString() << "'\n";
     return {};
   }
@@ -289,7 +289,7 @@ bool GzSpawnClient::pauseWorldSync(const QString &_worldName)
 
   if (!called || !result)
   {
-    gzwarn << "[robot_importer_gui] pauseWorldSync: /world/control call failed"
+    gzwarn << "[gz_model_importer_gui] pauseWorldSync: /world/control call failed"
            << " for world '" << _worldName.toStdString()
            << "'. Physics may still be running — spawn may be unsafe.\n";
     return false;
@@ -316,7 +316,7 @@ void GzSpawnClient::setEntityPoseAsync(const QString &_worldName,
   const EntitySpawnPose pose = _pose;
   GzSpawnClient *self = this;
 
-  gzmsg << "[robot_importer_gui] set_pose → service='" << service
+  gzmsg << "[gz_model_importer_gui] set_pose → service='" << service
         << "' entity='" << name
         << "' pos=(" << pose.x << "," << pose.y << "," << pose.z
         << ") rpy=(" << pose.roll << "," << pose.pitch << "," << pose.yaw
@@ -349,7 +349,7 @@ void GzSpawnClient::setEntityPoseAsync(const QString &_worldName,
     if (!called || !result || !rep.data())
     {
       const std::string reason = called ? "server refused" : "service timeout";
-      gzwarn << "[robot_importer_gui] set_pose failed: service='" << service
+      gzwarn << "[gz_model_importer_gui] set_pose failed: service='" << service
              << "' entity='" << name
              << "' result='" << reason
              << "' pos=(" << pose.x << "," << pose.y << "," << pose.z << ")\n";
@@ -362,7 +362,7 @@ void GzSpawnClient::setEntityPoseAsync(const QString &_worldName,
     }
     else
     {
-      gzmsg << "[robot_importer_gui] set_pose succeeded for '" << name << "'\n";
+      gzmsg << "[gz_model_importer_gui] set_pose succeeded for '" << name << "'\n";
     }
   });
 }
@@ -390,4 +390,4 @@ void GzSpawnClient::setWorldPaused(const QString &_worldName, bool _paused)
   });
 }
 
-}  // namespace robot_importer_gui
+}  // namespace gz_model_importer_gui

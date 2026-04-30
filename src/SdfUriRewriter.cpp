@@ -1,4 +1,4 @@
-#include "robot_importer_gui/SdfUriRewriter.hh"
+#include "gz_model_importer_gui/SdfUriRewriter.hh"
 
 #include <cstdlib>
 
@@ -9,7 +9,7 @@
 #include <gz/common/Console.hh>
 #include <tinyxml2.h>
 
-namespace robot_importer_gui
+namespace gz_model_importer_gui
 {
 
 namespace
@@ -123,7 +123,7 @@ bool rewriteUriElement(tinyxml2::XMLElement *elem,
     const int slash = rel.indexOf(QLatin1Char('/'));
     if (slash < 0)
     {
-      gzwarn << "[robot_importer_gui] SdfUriRewriter: malformed model URI "
+      gzwarn << "[gz_model_importer_gui] SdfUriRewriter: malformed model URI "
              << "(no slash after model name): " << uri.toStdString() << "\n";
       unresolvedOut = uri;
       return false;
@@ -134,7 +134,7 @@ bool rewriteUriElement(tinyxml2::XMLElement *elem,
     const QString dir = resolveModelDir(modelName, modelDir, modelsRoot);
     if (dir.isEmpty())
     {
-      gzwarn << "[robot_importer_gui] SdfUriRewriter: cannot resolve '"
+      gzwarn << "[gz_model_importer_gui] SdfUriRewriter: cannot resolve '"
              << uri.toStdString() << "' — package '" << modelName.toStdString()
              << "' not found in modelDir, modelsRoot, GZ_SIM_RESOURCE_PATH, "
              << "or ament index.\n";
@@ -144,7 +144,7 @@ bool rewriteUriElement(tinyxml2::XMLElement *elem,
 
     const QString abs = QDir::cleanPath(dir + QStringLiteral("/") + rest);
     elem->SetText((QStringLiteral("file://") + abs).toUtf8().constData());
-    gzmsg << "[robot_importer_gui] SdfUriRewriter: " << uri.toStdString()
+    gzmsg << "[gz_model_importer_gui] SdfUriRewriter: " << uri.toStdString()
           << " → file://" << abs.toStdString() << "\n";
     return true;
   }
@@ -156,7 +156,7 @@ bool rewriteUriElement(tinyxml2::XMLElement *elem,
     const int slash = rel.indexOf(QLatin1Char('/'));
     if (slash < 0)
     {
-      gzwarn << "[robot_importer_gui] SdfUriRewriter: malformed package URI "
+      gzwarn << "[gz_model_importer_gui] SdfUriRewriter: malformed package URI "
              << "(no slash after package name): " << uri.toStdString() << "\n";
       unresolvedOut = uri;
       return false;
@@ -171,13 +171,13 @@ bool rewriteUriElement(tinyxml2::XMLElement *elem,
       const QString abs = QDir::cleanPath(
           QString::fromStdString(shareDir) + QStringLiteral("/") + rest);
       elem->SetText((QStringLiteral("file://") + abs).toUtf8().constData());
-      gzmsg << "[robot_importer_gui] SdfUriRewriter: " << uri.toStdString()
+      gzmsg << "[gz_model_importer_gui] SdfUriRewriter: " << uri.toStdString()
             << " → file://" << abs.toStdString() << "\n";
       return true;
     }
     catch (...)
     {
-      gzwarn << "[robot_importer_gui] SdfUriRewriter: cannot resolve '"
+      gzwarn << "[gz_model_importer_gui] SdfUriRewriter: cannot resolve '"
              << uri.toStdString() << "' — package '" << pkgName.toStdString()
              << "' not found in ament index.\n";
       unresolvedOut = uri;
@@ -260,7 +260,7 @@ RewriteResult SdfUriRewriter::rewrite(const QString &_sdf,
   const QByteArray utf8 = _sdf.toUtf8();
   if (doc.Parse(utf8.constData(), utf8.size()) != tinyxml2::XML_SUCCESS)
   {
-    gzwarn << "[robot_importer_gui] SdfUriRewriter: failed to parse SDF XML ("
+    gzwarn << "[gz_model_importer_gui] SdfUriRewriter: failed to parse SDF XML ("
            << doc.ErrorStr() << "). URIs left unrewritten.\n";
     return result;
   }
@@ -269,7 +269,7 @@ RewriteResult SdfUriRewriter::rewrite(const QString &_sdf,
                  _modelDir, _modelsRoot,
                  result.totalUris, result.resolvedUris, result.unresolvedUris);
 
-  gzmsg << "[robot_importer_gui] SdfUriRewriter: "
+  gzmsg << "[gz_model_importer_gui] SdfUriRewriter: "
         << result.resolvedUris << "/" << result.totalUris
         << " URIs resolved";
   if (!result.unresolvedUris.isEmpty())
@@ -286,4 +286,4 @@ RewriteResult SdfUriRewriter::rewrite(const QString &_sdf,
   return result;
 }
 
-}  // namespace robot_importer_gui
+}  // namespace gz_model_importer_gui

@@ -1,10 +1,10 @@
-#ifndef ROBOT_IMPORTER_GUI_INSTANCE_REWRITER_HH_
-#define ROBOT_IMPORTER_GUI_INSTANCE_REWRITER_HH_
+#ifndef GZ_MODEL_IMPORTER_GUI_INSTANCE_REWRITER_HH_
+#define GZ_MODEL_IMPORTER_GUI_INSTANCE_REWRITER_HH_
 
 #include <string>
 #include <QString>
 
-namespace robot_importer_gui
+namespace gz_model_importer_gui
 {
 
 /// SDF rewriter for multi-instance support.
@@ -27,6 +27,6 @@ struct InstanceRewriter
                              QString &_warnings);
 };
 
-}  // namespace robot_importer_gui
+}  // namespace gz_model_importer_gui
 
 #endif

@@ -1,6 +1,6 @@
-#include "robot_importer_gui/ImportOptions.hh"
+#include "gz_model_importer_gui/ImportOptions.hh"
 
-namespace robot_importer_gui
+namespace gz_model_importer_gui
 {
 
 ImportOptions::ImportOptions(QObject *_parent) : QObject(_parent) {}
@@ -46,4 +46,4 @@ void ImportOptions::reset()
   setPoseYaw(0.0);
 }
 
-}  // namespace robot_importer_gui
+}  // namespace gz_model_importer_gui

@@ -1,12 +1,12 @@
-#ifndef ROBOT_IMPORTER_GUI_FILE_SELECTOR_HH_
-#define ROBOT_IMPORTER_GUI_FILE_SELECTOR_HH_
+#ifndef GZ_MODEL_IMPORTER_GUI_FILE_SELECTOR_HH_
+#define GZ_MODEL_IMPORTER_GUI_FILE_SELECTOR_HH_
 
 #include <QObject>
 #include <QString>
 
-#include "robot_importer_gui/FileLoader.hh"
+#include "gz_model_importer_gui/FileLoader.hh"
 
-namespace robot_importer_gui
+namespace gz_model_importer_gui
 {
 
 /// Owns the file-selection step: accepts a path (or file:// URL from QML
@@ -33,7 +33,7 @@ class FileSelector : public QObject
 
   public: Q_INVOKABLE void reset();
 
-  signals: void fileReady(const QString &path, robot_importer_gui::FileFormat format);
+  signals: void fileReady(const QString &path, gz_model_importer_gui::FileFormat format);
   signals: void fileError(const QString &message);
   signals: void selectedPathChanged();
   signals: void detectedFormatChanged();
@@ -45,6 +45,6 @@ class FileSelector : public QObject
   private: FileFormat fileFormat_{FileFormat::Unknown};
 };
 
-}  // namespace robot_importer_gui
+}  // namespace gz_model_importer_gui
 
 #endif

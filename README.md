@@ -1,6 +1,8 @@
-# robot_importer_gui
+# gz_model_importer_gui
 
 Gazebo Sim (Harmonic) GUI plugin for ROS 2 Jazzy that provides a modal robot importer workflow — no launch files required.
+
+This package is part of a Gazebo / ROS 2 integration suite. Its job is to get a robot model into the active Gazebo world quickly; the next plugin to use in the workflow is [`gz_ros2_bridge_manager`](https://github.com/asoriano1/gz_ros2_bridge_manager), which bridges Gazebo topics into ROS 2 once the model is already running.
 
 Load a local robot description, preview it in the active simulation, configure spawn options, and import it into the Gazebo world in a few clicks.
 
@@ -34,7 +36,7 @@ Load a local robot description, preview it in the active simulation, configure s
 
 ```bash
 cd <workspace>
-colcon build --packages-select robot_importer_gui
+colcon build --packages-select gz_model_importer_gui
 source install/setup.bash
 ```
 
@@ -45,7 +47,7 @@ source install/setup.bash
 The plugin ships a ready-to-use GUI config:
 
 ```bash
-gz sim --gui-config $(ros2 pkg prefix robot_importer_gui)/share/robot_importer_gui/config/robot_importer_gui.config
+gz sim --gui-config $(ros2 pkg prefix gz_model_importer_gui)/share/gz_model_importer_gui/config/gz_model_importer_gui.config
 ```
 
 Or add the plugin entry to an existing world file's `<gui>` section:
@@ -104,7 +106,7 @@ The importer does **not** launch ROS 2 bridges or manage runtime processes.
 
 When a loaded model contains native Gazebo sensors (camera, lidar, IMU, …) or ROS-related plugins, the importer shows a compact informational hint after import. No bridge commands are generated and no external processes are started.
 
-To bridge Gazebo sensor topics to ROS 2 after import, use the separate **ROS 2 Bridge Manager** plugin (`gz_ros2_bridge_manager`), which inspects models already present in the Gazebo world and manages `ros_gz_bridge` instances.
+To bridge Gazebo sensor topics to ROS 2 after import, use the separate **ROS 2 Bridge Manager** plugin, [`gz_ros2_bridge_manager`](https://github.com/asoriano1/gz_ros2_bridge_manager), which inspects models already present in the Gazebo world and manages `ros_gz_bridge` instances.
 
 Models with `ros2_control`-related elements require an external controller launch setup — this is also outside the scope of the importer.
 

@@ -1,4 +1,4 @@
-#include "robot_importer_gui/XacroExpander.hh"
+#include "gz_model_importer_gui/XacroExpander.hh"
 
 #include <QFile>
 #include <QMap>
@@ -6,7 +6,7 @@
 #include <QString>
 #include <tinyxml2.h>
 
-namespace robot_importer_gui
+namespace gz_model_importer_gui
 {
 
 XacroExpander::XacroExpander(QObject *_parent)
@@ -115,4 +115,4 @@ void XacroExpander::onProcessFinished(int exitCode, QProcess::ExitStatus status)
   emit expandComplete(stdoutStr);
 }
 
-}  // namespace robot_importer_gui
+}  // namespace gz_model_importer_gui

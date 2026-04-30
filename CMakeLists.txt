@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(robot_importer_gui CXX)
+project(gz_model_importer_gui CXX)
 
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
@@ -56,14 +56,14 @@ set(PLUGIN_SOURCES
 
 # Headers that carry Q_OBJECT must be listed for AUTOMOC with CMP0100 NEW.
 set(PLUGIN_MOC_HEADERS
-  include/robot_importer_gui/ImporterPlugin.hh
-  include/robot_importer_gui/ImporterBackend.hh
-  include/robot_importer_gui/ImportOptions.hh
-  include/robot_importer_gui/FileSelector.hh
-  include/robot_importer_gui/XacroExpander.hh
-  include/robot_importer_gui/ModelLoader.hh
-  include/robot_importer_gui/PreviewController.hh
-  include/robot_importer_gui/GzSpawnClient.hh
+  include/gz_model_importer_gui/ImporterPlugin.hh
+  include/gz_model_importer_gui/ImporterBackend.hh
+  include/gz_model_importer_gui/ImportOptions.hh
+  include/gz_model_importer_gui/FileSelector.hh
+  include/gz_model_importer_gui/XacroExpander.hh
+  include/gz_model_importer_gui/ModelLoader.hh
+  include/gz_model_importer_gui/PreviewController.hh
+  include/gz_model_importer_gui/GzSpawnClient.hh
 )
 
 # Name MUST match the .qrc filename (without extension) to get a unique
@@ -117,7 +117,7 @@ install(DIRECTORY config/
 )
 
 ament_environment_hooks(
-  "${CMAKE_CURRENT_SOURCE_DIR}/env-hooks/robot_importer_gui.sh.in"
+  "${CMAKE_CURRENT_SOURCE_DIR}/env-hooks/gz_model_importer_gui.sh.in"
 )
 
 ament_package()

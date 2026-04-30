@@ -1,10 +1,10 @@
-#ifndef ROBOT_IMPORTER_GUI_IMPORT_OPTIONS_HH_
-#define ROBOT_IMPORTER_GUI_IMPORT_OPTIONS_HH_
+#ifndef GZ_MODEL_IMPORTER_GUI_IMPORT_OPTIONS_HH_
+#define GZ_MODEL_IMPORTER_GUI_IMPORT_OPTIONS_HH_
 
 #include <QObject>
 #include <QString>
 
-namespace robot_importer_gui
+namespace gz_model_importer_gui
 {
 
 /// Import options exposed to QML as a flat set of bindable properties.
@@ -61,6 +61,6 @@ class ImportOptions : public QObject
   private: double poseRoll_{0.0}, posePitch_{0.0}, poseYaw_{0.0};
 };
 
-}  // namespace robot_importer_gui
+}  // namespace gz_model_importer_gui
 
 #endif

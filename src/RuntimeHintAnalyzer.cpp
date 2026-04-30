@@ -1,4 +1,4 @@
-#include "robot_importer_gui/RuntimeHintAnalyzer.hh"
+#include "gz_model_importer_gui/RuntimeHintAnalyzer.hh"
 
 #include <functional>
 
@@ -7,7 +7,7 @@
 
 #include <tinyxml2.h>
 
-namespace robot_importer_gui
+namespace gz_model_importer_gui
 {
 
 namespace
@@ -243,4 +243,4 @@ RuntimeHint RuntimeHintAnalyzer::analyze(const QString &_sdfXml,
   return hint;
 }
 
-}  // namespace robot_importer_gui
+}  // namespace gz_model_importer_gui

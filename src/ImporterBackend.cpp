@@ -1,4 +1,4 @@
-#include "robot_importer_gui/ImporterBackend.hh"
+#include "gz_model_importer_gui/ImporterBackend.hh"
 
 #include <QDir>
 #include <QFileInfo>
@@ -7,18 +7,18 @@
 #include <QTimer>
 #include <gz/common/Console.hh>
 
-#include "robot_importer_gui/ImportOptions.hh"
-#include "robot_importer_gui/FileSelector.hh"
-#include "robot_importer_gui/ModelLoader.hh"
-#include "robot_importer_gui/XacroExpander.hh"
-#include "robot_importer_gui/PreviewController.hh"
-#include "robot_importer_gui/GzSpawnClient.hh"
-#include "robot_importer_gui/InstanceRewriter.hh"
-#include "robot_importer_gui/RuntimeHintAnalyzer.hh"
-#include "robot_importer_gui/SdfUriRewriter.hh"
-#include "robot_importer_gui/SdfPreflightChecker.hh"
+#include "gz_model_importer_gui/ImportOptions.hh"
+#include "gz_model_importer_gui/FileSelector.hh"
+#include "gz_model_importer_gui/ModelLoader.hh"
+#include "gz_model_importer_gui/XacroExpander.hh"
+#include "gz_model_importer_gui/PreviewController.hh"
+#include "gz_model_importer_gui/GzSpawnClient.hh"
+#include "gz_model_importer_gui/InstanceRewriter.hh"
+#include "gz_model_importer_gui/RuntimeHintAnalyzer.hh"
+#include "gz_model_importer_gui/SdfUriRewriter.hh"
+#include "gz_model_importer_gui/SdfPreflightChecker.hh"
 
-namespace robot_importer_gui
+namespace gz_model_importer_gui
 {
 
 ImporterBackend::ImporterBackend(QObject *_parent)
@@ -137,7 +137,7 @@ PreviewController *ImporterBackend::previewController() const { return previewCo
 // ============================================================
 void ImporterBackend::reset()
 {
-  gzmsg << "[robot_importer_gui] reset() called from state: "
+  gzmsg << "[gz_model_importer_gui] reset() called from state: "
         << stateName().toStdString() << "\n";
 
   poseDebounceTimer_->stop();
@@ -201,7 +201,7 @@ void ImporterBackend::requestPreview()
       importOptions_->poseRoll(), importOptions_->posePitch(), importOptions_->poseYaw()
   };
 
-  gzmsg << "[robot_importer_gui] Spawning preview '__preview_"
+  gzmsg << "[gz_model_importer_gui] Spawning preview '__preview_"
         << importOptions_->instanceName().toStdString()
         << "' world='" << worldName_.toStdString()
         << "' pose=(" << initialPose.x << "," << initialPose.y
@@ -221,7 +221,7 @@ void ImporterBackend::cancelPreview()
     return;
   if (!previewController_->isPreviewing()) return;
 
-  gzmsg << "[robot_importer_gui] Cancelling preview.\n";
+  gzmsg << "[gz_model_importer_gui] Cancelling preview.\n";
   previewController_->cancelPreview();
 }
 
@@ -237,7 +237,7 @@ void ImporterBackend::importRobot()
 
   if (previewController_->isPreviewing())
   {
-    gzmsg << "[robot_importer_gui] Confirm preview → removing preview entity.\n";
+    gzmsg << "[gz_model_importer_gui] Confirm preview → removing preview entity.\n";
     setState(ImporterState::Spawning);
     previewController_->confirmPreview();
     return;
@@ -259,7 +259,7 @@ void ImporterBackend::onFileReady(const QString &path, FileFormat format)
   const bool spawnInFlight = (state_ == ImporterState::Previewing);
   if (previewLive || spawnInFlight)
   {
-    gzmsg << "[robot_importer_gui] Preview "
+    gzmsg << "[gz_model_importer_gui] Preview "
           << (spawnInFlight ? "in-flight" : "active")
           << " — deferring load of '" << path.toStdString() << "'\n";
     pendingFilePath_   = path;
@@ -274,7 +274,7 @@ void ImporterBackend::onFileReady(const QString &path, FileFormat format)
 
 void ImporterBackend::onFileError(const QString &msg)
 {
-  gzwarn << "[robot_importer_gui] File error: " << msg.toStdString() << "\n";
+  gzwarn << "[gz_model_importer_gui] File error: " << msg.toStdString() << "\n";
   setError(msg);
 }
 
@@ -283,7 +283,7 @@ void ImporterBackend::onLoadComplete(const QString &sdfContent)
   if (state_ != ImporterState::Expanding &&
       state_ != ImporterState::Converting)
   {
-    gzwarn << "[robot_importer_gui] Stale loadComplete in state "
+    gzwarn << "[gz_model_importer_gui] Stale loadComplete in state "
            << stateName().toStdString() << " — discarded.\n";
     return;
   }
@@ -330,9 +330,9 @@ void ImporterBackend::onLoadComplete(const QString &sdfContent)
     emit preflightReportChanged();
   }
 
-  gzmsg << "[robot_importer_gui] SDF loaded (" << rw.sdf.size() << " chars).\n";
+  gzmsg << "[gz_model_importer_gui] SDF loaded (" << rw.sdf.size() << " chars).\n";
   if (!preflightReport_.isEmpty())
-    gzmsg << "[robot_importer_gui] Preflight:\n" << preflightReport_.toStdString() << "\n";
+    gzmsg << "[gz_model_importer_gui] Preflight:\n" << preflightReport_.toStdString() << "\n";
 
   // Lightweight ROS 2 hint — scan the full SDF, not the stripped preview.
   {
@@ -360,7 +360,7 @@ void ImporterBackend::onLoadComplete(const QString &sdfContent)
       runtimeHint_ = hintParts.join(QStringLiteral(" "));
       runtimeHintDetails_ = hint.detectedItems.join(QStringLiteral("\n"));
 
-      gzmsg << "[robot_importer_gui] Runtime hint: " << hint.summary.toStdString() << "\n";
+      gzmsg << "[gz_model_importer_gui] Runtime hint: " << hint.summary.toStdString() << "\n";
     }
     else
     {
@@ -379,10 +379,10 @@ void ImporterBackend::onLoadFailed(const QString &error)
   if (state_ != ImporterState::Expanding &&
       state_ != ImporterState::Converting)
   {
-    gzwarn << "[robot_importer_gui] Stale loadFailed — discarded.\n";
+    gzwarn << "[gz_model_importer_gui] Stale loadFailed — discarded.\n";
     return;
   }
-  gzwarn << "[robot_importer_gui] Load failed: " << error.toStdString() << "\n";
+  gzwarn << "[gz_model_importer_gui] Load failed: " << error.toStdString() << "\n";
   const bool wasXacro = (state_ == ImporterState::Expanding);
   setError(error);
   setState(wasXacro ? ImporterState::ExpansionFailed : ImporterState::ConversionFailed);
@@ -392,12 +392,12 @@ void ImporterBackend::onPreviewSpawned(const QString &name)
 {
   if (state_ != ImporterState::Previewing)
   {
-    gzwarn << "[robot_importer_gui] Stale preview spawn ack for '"
+    gzwarn << "[gz_model_importer_gui] Stale preview spawn ack for '"
            << name.toStdString() << "'. Removing orphan.\n";
     previewController_->cancelPreview();
     return;
   }
-  gzmsg << "[robot_importer_gui] Preview entity alive: " << name.toStdString() << "\n";
+  gzmsg << "[gz_model_importer_gui] Preview entity alive: " << name.toStdString() << "\n";
   setState(ImporterState::Configuring);
 }
 
@@ -405,10 +405,10 @@ void ImporterBackend::onPreviewFailed(const QString &error)
 {
   if (state_ != ImporterState::Previewing)
   {
-    gzwarn << "[robot_importer_gui] Stale previewFailed — discarded.\n";
+    gzwarn << "[gz_model_importer_gui] Stale previewFailed — discarded.\n";
     return;
   }
-  gzwarn << "[robot_importer_gui] Preview failed: " << error.toStdString() << "\n";
+  gzwarn << "[gz_model_importer_gui] Preview failed: " << error.toStdString() << "\n";
   setError(error);
   setState(ImporterState::PreviewFailed);
 }
@@ -421,13 +421,13 @@ void ImporterBackend::onPreviewCancelled()
     const FileFormat fmt = pendingFileFormat_;
     pendingFilePath_.clear();
     pendingFileFormat_ = FileFormat::Unknown;
-    gzmsg << "[robot_importer_gui] Previous preview removed — loading '"
+    gzmsg << "[gz_model_importer_gui] Previous preview removed — loading '"
           << path.toStdString() << "'\n";
     startFileLoad(path, fmt);
     return;
   }
   if (state_ == ImporterState::Idle) return;
-  gzmsg << "[robot_importer_gui] Preview cancelled — returning to Ready.\n";
+  gzmsg << "[gz_model_importer_gui] Preview cancelled — returning to Ready.\n";
   setState(ImporterState::Ready);
 }
 
@@ -440,10 +440,10 @@ void ImporterBackend::onSpawnComplete(const QString &name)
 {
   if (state_ != ImporterState::Spawning)
   {
-    gzwarn << "[robot_importer_gui] Stale spawnComplete — discarded.\n";
+    gzwarn << "[gz_model_importer_gui] Stale spawnComplete — discarded.\n";
     return;
   }
-  gzmsg << "[robot_importer_gui] Spawn complete: " << name.toStdString() << "\n";
+  gzmsg << "[gz_model_importer_gui] Spawn complete: " << name.toStdString() << "\n";
   lastError_.clear(); lastWarning_.clear(); preflightReport_.clear();
   emit lastErrorChanged(); emit lastWarningChanged(); emit preflightReportChanged();
   clearRuntimeHint();
@@ -454,10 +454,10 @@ void ImporterBackend::onSpawnFailed(const QString &error)
 {
   if (state_ != ImporterState::Spawning)
   {
-    gzwarn << "[robot_importer_gui] Stale spawnFailed — discarded.\n";
+    gzwarn << "[gz_model_importer_gui] Stale spawnFailed — discarded.\n";
     return;
   }
-  gzerr << "[robot_importer_gui] Spawn failed: " << error.toStdString() << "\n";
+  gzerr << "[gz_model_importer_gui] Spawn failed: " << error.toStdString() << "\n";
   setError(error);
   setState(ImporterState::SpawnFailed);
 }
@@ -475,7 +475,7 @@ bool ImporterBackend::ensureWorldName()
         "Is Gazebo running and the gz-transport network reachable?"));
     return false;
   }
-  gzmsg << "[robot_importer_gui] World discovered: " << worldName_.toStdString() << "\n";
+  gzmsg << "[gz_model_importer_gui] World discovered: " << worldName_.toStdString() << "\n";
   emit worldNameChanged();
   return true;
 }
@@ -502,7 +502,7 @@ void ImporterBackend::doFinalSpawn()
       importOptions_->poseRoll(), importOptions_->posePitch(), importOptions_->poseYaw()
   };
 
-  gzmsg << "[robot_importer_gui] Final spawn: entity='"
+  gzmsg << "[gz_model_importer_gui] Final spawn: entity='"
         << importOptions_->instanceName().toStdString()
         << "' world='" << worldName_.toStdString() << "'\n";
 
@@ -571,7 +571,7 @@ void ImporterBackend::startFileLoad(const QString &path, FileFormat format)
     assignUniqueName(path);
   }
 
-  gzmsg << "[robot_importer_gui] Loading: " << path.toStdString()
+  gzmsg << "[gz_model_importer_gui] Loading: " << path.toStdString()
         << "  modelDir=" << modelDir_.toStdString() << "\n";
 
   setState(format == FileFormat::Xacro
@@ -631,7 +631,7 @@ void ImporterBackend::startFileLoad(const QString &path, FileFormat format)
 
     if (!discovered.isEmpty())
     {
-      gzmsg << "[robot_importer_gui] XACRO args effective:";
+      gzmsg << "[gz_model_importer_gui] XACRO args effective:";
       for (const QString &a : effectiveArgs) gzmsg << " [" << a.toStdString() << "]";
       gzmsg << "\n";
     }
@@ -698,7 +698,7 @@ void ImporterBackend::assignUniqueName(const QString &filePath)
   while (taken.contains(candidate));
 
   importOptions_->setInstanceName(candidate);
-  gzmsg << "[robot_importer_gui] Proposed instance name: '"
+  gzmsg << "[gz_model_importer_gui] Proposed instance name: '"
         << candidate.toStdString() << "'\n";
 }
 
@@ -722,4 +722,4 @@ void ImporterBackend::clearRuntimeHint()
   emit runtimeHintChanged();
 }
 
-}  // namespace robot_importer_gui
+}  // namespace gz_model_importer_gui
