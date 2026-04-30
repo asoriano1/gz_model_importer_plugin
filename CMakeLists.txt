@@ -116,6 +116,11 @@ install(DIRECTORY config/
   OPTIONAL
 )
 
+install(DIRECTORY test/worlds/
+  DESTINATION share/${PROJECT_NAME}/worlds
+  FILES_MATCHING PATTERN "*.sdf"
+)
+
 ament_environment_hooks(
   "${CMAKE_CURRENT_SOURCE_DIR}/env-hooks/gz_model_importer_gui.sh.in"
 )

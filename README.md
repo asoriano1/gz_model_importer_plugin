@@ -10,8 +10,6 @@ Load a local robot description, preview it in the active simulation, configure s
 
 ![Import workflow](demo.gif)
 
-![Preview and spawn](demo2.gif)
-
 ## Features
 
 - **File formats**: URDF, XACRO (expanded via `xacro`), SDF
@@ -20,7 +18,8 @@ Load a local robot description, preview it in the active simulation, configure s
 - **Auto-selection**: preview entity is automatically selected in the Gazebo Entity Tree on spawn
 - **Highlight modes**: Wireframe, Transparent, or None (user-selectable; model appearance unchanged by default)
 - **Preflight report**: detects unresolved URIs, Ogre material scripts, mesh collisions, and embedded plugins before import
-- **Import options**: instance name, ROS namespace, spawn pose (X / Y / Z / Roll / Pitch / Yaw)
+- **Import options**: Gazebo model name, ROS 2 namespace, ROS 2 frame prefix, and spawn pose (X / Y / Z / Roll / Pitch / Yaw)
+- **Sequential defaults**: each newly loaded model gets an incremented default model name; XACRO files exposing `namespace` and `prefix` args also get incremented default ROS 2 namespace and frame prefix values derived from that model name
 - **Visual preview badge**: overlay banner on the main Gazebo window during preview mode
 
 ## Requirements
@@ -36,18 +35,44 @@ Load a local robot description, preview it in the active simulation, configure s
 
 ```bash
 cd <workspace>
-colcon build --packages-select gz_model_importer_gui
+source /opt/ros/jazzy/setup.bash
+colcon build --symlink-install --packages-select gz_model_importer_gui
 source install/setup.bash
 ```
 
 ## Usage
 
-### Launch Gazebo with the plugin
+### Quick start: Gazebo + demo world + plugin
+
+The package installs both a GUI config and a ready-to-use demo world. After
+building and sourcing the workspace, this command starts Gazebo with the plugin
+already loaded:
+
+```bash
+gz sim \
+  $(ros2 pkg prefix gz_model_importer_gui)/share/gz_model_importer_gui/worlds/importer_test.sdf \
+  --gui-config $(ros2 pkg prefix gz_model_importer_gui)/share/gz_model_importer_gui/config/gz_model_importer_gui.config
+```
+
+If you prefer the Robotnik environment world shipped with the package, use:
+
+```bash
+gz sim \
+  $(ros2 pkg prefix gz_model_importer_gui)/share/gz_model_importer_gui/worlds/robotnik_world.sdf \
+  --gui-config $(ros2 pkg prefix gz_model_importer_gui)/share/gz_model_importer_gui/config/gz_model_importer_gui.config
+```
+
+If `ros2 pkg prefix gz_model_importer_gui` reports `Package not found`, the
+workspace has not been sourced yet or the package has not been built in the
+current shell.
+
+### Launch Gazebo with the plugin in your own world
 
 The plugin ships a ready-to-use GUI config:
 
 ```bash
-gz sim --gui-config $(ros2 pkg prefix gz_model_importer_gui)/share/gz_model_importer_gui/config/gz_model_importer_gui.config
+gz sim <your_world.sdf> \
+  --gui-config $(ros2 pkg prefix gz_model_importer_gui)/share/gz_model_importer_gui/config/gz_model_importer_gui.config
 ```
 
 Or add the plugin entry to an existing world file's `<gui>` section:
@@ -60,9 +85,10 @@ Or add the plugin entry to an existing world file's `<gui>` section:
 
 1. Click **Browse** and select a `.urdf`, `.xacro`, or `.sdf` file.
 2. Review the **preflight report** (unresolved URIs, mesh collisions, detected plugins).
-3. Expand **Pose** to set the spawn position and orientation.
-4. Set **Name** and **Namespace** for multi-instance deployments.
-5. Click **Import** — the plugin spawns the robot into the world.
+3. Adjust the **Model name** that will be used for the Gazebo entity.
+4. For XACRO files exposing `namespace` / `prefix` args, adjust the default **Namespace** and **Frame prefix** values used for ROS 2 topics and frames.
+5. Expand **Pose** to set the spawn position and orientation.
+6. Click **Import** — the plugin spawns the robot into the world.
 
 A preview entity (static, plugins stripped) is spawned automatically before the final import so you can inspect the model in the scene first. Click **Cancel** to discard the preview without importing.
 
@@ -79,9 +105,14 @@ Make sure your workspace is sourced (`source install/setup.bash`) so that `ament
 
 ## Multi-instance notes
 
-The **Name** field sets the Gazebo entity name and the SDF model name. The **Namespace** field is passed as the ROS namespace to all plugins in the description.
+The **Model name** field sets the Gazebo entity name and the top-level SDF model name. For each newly loaded file, the plugin proposes a unique sequential default such as `sensor_test_robot_1`, `sensor_test_robot_2`, and so on.
 
-> The importer rewrites the top-level model name and the ROS namespace parameter. It does **not** automatically rewrite hardcoded topic names, service names, or TF frame IDs inside individual plugin configurations. For full isolation between multiple instances of the same robot, ensure your robot description uses namespaced topics and parameterised frame prefixes.
+When a XACRO file declares `namespace` and / or `prefix` arguments, the UI exposes matching **Namespace** and **Frame prefix** fields. Their defaults are derived from the proposed model name, so a model named `sensor_test_robot_3` starts with:
+
+- Namespace: `sensor_test_robot_3`
+- Frame prefix: `sensor_test_robot_3_`
+
+> The importer rewrites the top-level model name and passes ROS-related overrides only where it recognizes them. `namespace` is injected into supported ROS plugin elements, and `prefix` is forwarded as a XACRO argument when the description declares it. The plugin does **not** rewrite arbitrary hardcoded topic names, service names, or TF frame IDs inside every possible plugin configuration, so full isolation still depends on how the robot description itself is authored.
 
 ## Test models
 
