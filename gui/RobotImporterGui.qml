@@ -395,6 +395,28 @@ Rectangle {
               }
             }
 
+            ColumnLayout {
+              Layout.fillWidth: true
+              spacing: 2
+
+              CheckBox {
+                text: "Launch robot_state_publisher after import"
+                checked: importOptions.launchRobotStatePublisher
+                enabled: backend.robotStatePublisherSupported
+                font.pixelSize: 12
+                onToggled: importOptions.launchRobotStatePublisher = checked
+              }
+
+              Label {
+                visible: backend.robotStatePublisherSupportText.length > 0
+                text: backend.robotStatePublisherSupportText
+                color: "#757575"
+                font.pixelSize: 11
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+              }
+            }
+
             // ---- Pose toggle ----
             Item {
               Layout.fillWidth: true
@@ -522,6 +544,7 @@ Rectangle {
           border.width: 1
           radius: 4
 
+          property bool expanded: false
           property bool detailsExpanded: false
 
           ColumnLayout {
@@ -532,54 +555,87 @@ Rectangle {
             }
             spacing: 4
 
-            Label {
-              text: "ROS 2 bridge hint"
-              font.bold: true; font.pixelSize: 12; color: "#e65100"
-            }
-
-            Label {
-              text: backend.runtimeHint
-              font.pixelSize: 11; color: "#4e342e"
-              wrapMode: Text.Wrap; Layout.fillWidth: true
-            }
-
-            // Details toggle
             Item {
               Layout.fillWidth: true
-              implicitHeight: hintDetailsToggle.implicitHeight + 2
-              visible: backend.runtimeHintDetails.length > 0
+              implicitHeight: hintHeader.implicitHeight + 2
 
-              Label {
-                id: hintDetailsToggle
-                anchors.verticalCenter: parent.verticalCenter
-                text: (runtimeHintCard.detailsExpanded ? "▼" : "▶") + "  Detected items"
-                font.pixelSize: 11; color: "#555"
+              RowLayout {
+                id: hintHeader
+                anchors.fill: parent
+                spacing: 8
+
+                Label {
+                  text: (runtimeHintCard.expanded ? "▼" : "▶") + "  ROS 2 bridge hint"
+                  font.bold: true; font.pixelSize: 12; color: "#e65100"
+                }
+
+                Label {
+                  Layout.fillWidth: true
+                  text: backend.runtimeHintSensorCount > 0
+                        ? "(" + backend.runtimeHintSensorCount + " Gazebo sensor" +
+                          (backend.runtimeHintSensorCount > 1 ? "s" : "") + " detected)"
+                        : (backend.runtimeHintSummary.length > 0
+                           ? "(" + backend.runtimeHintSummary + ")"
+                           : "")
+                  font.pixelSize: 11
+                  color: "#795548"
+                  elide: Text.ElideRight
+                }
               }
               MouseArea {
                 anchors.fill: parent; cursorShape: Qt.PointingHandCursor
-                onClicked: runtimeHintCard.detailsExpanded = !runtimeHintCard.detailsExpanded
+                onClicked: runtimeHintCard.expanded = !runtimeHintCard.expanded
               }
             }
 
-            Rectangle {
-              visible: runtimeHintCard.detailsExpanded && backend.runtimeHintDetails.length > 0
+            ColumnLayout {
+              visible: runtimeHintCard.expanded
               Layout.fillWidth: true
-              implicitHeight: hintDetailsLabel.implicitHeight + 8
-              color: "#fff3e0"; radius: 3; border.color: "#ffe082"; border.width: 1
+              spacing: 4
 
               Label {
-                id: hintDetailsLabel
-                anchors { left: parent.left; right: parent.right; top: parent.top; margins: 4 }
-                text: backend.runtimeHintDetails
-                font.pixelSize: 10; font.family: "monospace"
-                color: "#4e342e"; wrapMode: Text.Wrap
+                text: backend.runtimeHint
+                font.pixelSize: 11; color: "#4e342e"
+                wrapMode: Text.Wrap; Layout.fillWidth: true
               }
-            }
 
-            Label {
-              text: "Load the 'ROS 2 Bridge Manager' Gazebo GUI plugin to inspect topics and create bridges."
-              font.pixelSize: 10; font.italic: true; color: "#795548"
-              wrapMode: Text.Wrap; Layout.fillWidth: true
+              Item {
+                Layout.fillWidth: true
+                implicitHeight: hintDetailsToggle.implicitHeight + 2
+                visible: backend.runtimeHintDetails.length > 0
+
+                Label {
+                  id: hintDetailsToggle
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: (runtimeHintCard.detailsExpanded ? "▼" : "▶") + "  Detected items"
+                  font.pixelSize: 11; color: "#555"
+                }
+                MouseArea {
+                  anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                  onClicked: runtimeHintCard.detailsExpanded = !runtimeHintCard.detailsExpanded
+                }
+              }
+
+              Rectangle {
+                visible: runtimeHintCard.detailsExpanded && backend.runtimeHintDetails.length > 0
+                Layout.fillWidth: true
+                implicitHeight: hintDetailsLabel.implicitHeight + 8
+                color: "#fff3e0"; radius: 3; border.color: "#ffe082"; border.width: 1
+
+                Label {
+                  id: hintDetailsLabel
+                  anchors { left: parent.left; right: parent.right; top: parent.top; margins: 4 }
+                  text: backend.runtimeHintDetails
+                  font.pixelSize: 10; font.family: "monospace"
+                  color: "#4e342e"; wrapMode: Text.Wrap
+                }
+              }
+
+              Label {
+                text: "Load the 'ROS 2 Bridge Manager' Gazebo GUI plugin to inspect topics and create bridges."
+                font.pixelSize: 10; font.italic: true; color: "#795548"
+                wrapMode: Text.Wrap; Layout.fillWidth: true
+              }
             }
           }
         }

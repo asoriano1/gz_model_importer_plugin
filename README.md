@@ -2,9 +2,70 @@
 
 Gazebo Sim (Harmonic) GUI plugin for ROS 2 Jazzy that provides a modal robot importer workflow — no launch files required.
 
-This package is part of a Gazebo / ROS 2 integration suite. Its job is to get a robot model into the active Gazebo world quickly; the next plugin to use in the workflow is [`gz_ros2_bridge_manager`](https://github.com/asoriano1/gz_ros2_bridge_manager), which bridges Gazebo topics into ROS 2 once the model is already running.
+## Gazebo ROS 2 Model Runtime Suite
+
+This project is part of a broader **Gazebo ROS 2 Model Runtime Suite**: a set of Gazebo GUI tools designed to reduce the gap between loading a model in simulation and running a useful ROS 2 runtime around it.
+
+This package provides the **Gazebo Model Importer** step of that workflow. Its job is to get a robot model into the active Gazebo world quickly, optionally start `robot_state_publisher` for URDF / XACRO models, and hand off sensor bridging to the companion plugin [`gz_ros2_bridge_manager`](https://github.com/asoriano1/gz_ros2_bridge_manager).
 
 Load a local robot description, preview it in the active simulation, configure spawn options, and import it into the Gazebo world in a few clicks.
+
+```text
+URDF / XACRO / SDF
+       │
+       ▼
+Gazebo Model Importer
+       │
+       ├── Preview model
+       ├── Spawn final model in Gazebo
+       └── Optionally launch robot_state_publisher for URDF/XACRO
+       │
+       ▼
+Gazebo world + ROS 2 TF tree
+       │
+       ▼
+gz_ros2_bridge_manager
+       │
+       └── Discover and bridge Gazebo sensor topics
+       │
+       ▼
+ROS 2 tools and applications
+RViz · Nav2 · MoveIt · custom nodes
+```
+
+## Current scope
+
+Implemented in this plugin:
+
+- Model preview before final import
+- Final URDF / XACRO / SDF spawn into Gazebo
+- Namespace- and prefix-aware import workflow
+- Optional `robot_state_publisher` launch for URDF / XACRO models
+- Automatic cleanup of `robot_state_publisher` when Gazebo shuts down
+
+Provided by the companion bridge manager:
+
+- Gazebo topic discovery
+- Sensor topic classification
+- ROS 2 bridge command and process management
+
+Not currently handled by this plugin:
+
+- `ros2_control` controller management
+- Nav2 or MoveIt launch
+- A full ROS 2 runtime process dashboard
+- Automatic `robot_description` support for SDF-only models
+
+## What this enables
+
+With the importer and bridge manager together, a typical user can:
+
+1. Load a URDF, XACRO, or SDF model into a running Gazebo world.
+2. Preview and configure the model before spawning it.
+3. Spawn the final model with the desired instance name, namespace, and prefix settings.
+4. For URDF / XACRO models, automatically start `robot_state_publisher`.
+5. Use the bridge manager to expose Gazebo sensors to ROS 2.
+6. Inspect the model in RViz or connect higher-level ROS 2 stacks.
 
 ## Demo
 
@@ -20,6 +81,10 @@ Load a local robot description, preview it in the active simulation, configure s
 - **Preflight report**: detects unresolved URIs, Ogre material scripts, mesh collisions, and embedded plugins before import
 - **Import options**: Gazebo model name, ROS 2 namespace, ROS 2 frame prefix, and spawn pose (X / Y / Z / Roll / Pitch / Yaw)
 - **Sequential defaults**: each newly loaded model gets an incremented default model name; XACRO files exposing `namespace` and `prefix` args also get incremented default ROS 2 namespace and frame prefix values derived from that model name
+- **Optional ROS 2 runtime**: launch `robot_state_publisher` automatically after a successful final URDF / XACRO import
+- **Resolved robot description reuse**: `robot_description` comes from the same resolved URDF used by the final import pipeline
+- **ROS 2 namespace support**: `robot_state_publisher` starts in the selected ROS namespace with `use_sim_time=true`
+- **Process cleanup**: `robot_state_publisher` processes started by the plugin are terminated when Gazebo / the plugin shuts down
 - **Visual preview badge**: overlay banner on the main Gazebo window during preview mode
 
 ## Requirements
@@ -87,10 +152,11 @@ Or add the plugin entry to an existing world file's `<gui>` section:
 2. Review the **preflight report** (unresolved URIs, mesh collisions, detected plugins).
 3. Adjust the **Model name** that will be used for the Gazebo entity.
 4. For XACRO files exposing `namespace` / `prefix` args, adjust the default **Namespace** and **Frame prefix** values used for ROS 2 topics and frames.
-5. Expand **Pose** to set the spawn position and orientation.
-6. Click **Import** — the plugin spawns the robot into the world.
+5. For URDF / XACRO inputs, optionally enable **Launch robot_state_publisher after import**.
+6. Expand **Pose** to set the spawn position and orientation.
+7. Click **Import** — the plugin spawns the robot into the world.
 
-A preview entity (static, plugins stripped) is spawned automatically before the final import so you can inspect the model in the scene first. Click **Cancel** to discard the preview without importing.
+A preview entity (static, plugins stripped) is spawned automatically before the final import so you can inspect the model in the scene first. Click **Cancel** to discard the preview without importing. `robot_state_publisher` is never launched during preview.
 
 ## URI resolution order
 
@@ -131,18 +197,40 @@ The `test/` directory contains ready-to-use models for manual validation:
 
 See `test/models/README.md` for details on each model and the expected behaviour.
 
-## ROS 2 bridge / runtime note
+## ROS 2 runtime support
 
-The importer does **not** launch ROS 2 bridges or manage runtime processes.
+For URDF and XACRO inputs, the importer can optionally start `robot_state_publisher` after a successful final import. Enable **Launch robot_state_publisher after import** in the import options before pressing **Import**.
 
-When a loaded model contains native Gazebo sensors (camera, lidar, IMU, …) or ROS-related plugins, the importer shows a compact informational hint after import. No bridge commands are generated and no external processes are started.
+This option is available only for URDF / XACRO models. For SDF-only models it is disabled, because the importer does not have a URDF `robot_description` to publish.
+
+After a successful final import, the importer:
+
+- reuses the resolved URDF from the final import pipeline as `robot_description`
+- starts `robot_state_publisher` in the selected ROS namespace
+- sets `use_sim_time=true`
+- keeps preview behavior unchanged: nothing is launched during preview
+- terminates the started `robot_state_publisher` process when Gazebo / the plugin shuts down
+
+You can verify the runtime state from a sourced ROS 2 shell:
+
+```bash
+ros2 node list
+ros2 param get /<namespace>/robot_state_publisher use_sim_time
+ros2 topic echo /tf_static
+pgrep -af robot_state_publisher
+```
 
 To bridge Gazebo sensor topics to ROS 2 after import, use the separate **ROS 2 Bridge Manager** plugin, [`gz_ros2_bridge_manager`](https://github.com/asoriano1/gz_ros2_bridge_manager), which inspects models already present in the Gazebo world and manages `ros_gz_bridge` instances.
 
-Models with `ros2_control`-related elements require an external controller launch setup — this is also outside the scope of the importer.
+Models with `ros2_control`-related elements still require an external controller launch setup.
 
 ## Known limitations
 
+- `robot_state_publisher` launch is not available for SDF-only models.
+- There is no UI yet to stop or restart `robot_state_publisher` manually once launched.
+- `robot_state_publisher` is launched only after the final import succeeds, never during preview.
+- A ROS namespace does not automatically prefix TF frame IDs.
+- Multi-robot TF consistency still depends on how the URDF / XACRO uses namespace and prefix arguments.
 - XACRO files with required arguments that cannot be inferred are not supported without manual parameter injection.
 - Mesh collision shapes (e.g. convex decomposition) may not load in the preview physics engine; this does not affect the visual preview.
 - Switching highlight mode from Transparent back to None restores opacity but may not fully restore all material properties if the original material used engine-specific extensions.

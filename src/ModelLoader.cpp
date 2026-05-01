@@ -65,7 +65,10 @@ void ModelLoader::load(const QString &_path,
     return;
   }
 
-  emit loadComplete(QString::fromStdString(sdf));
+  const QString resolvedUrdf = (_format == FileFormat::Urdf)
+      ? QString::fromStdString(content)
+      : QString();
+  emit loadComplete(QString::fromStdString(sdf), resolvedUrdf);
 }
 
 void ModelLoader::cancel()
@@ -91,7 +94,7 @@ void ModelLoader::onExpandComplete(const QString &urdfContent)
     return;
   }
 
-  emit loadComplete(QString::fromStdString(sdf));
+  emit loadComplete(QString::fromStdString(sdf), urdfContent);
 }
 
 void ModelLoader::onExpandFailed(const QString &errorSummary,

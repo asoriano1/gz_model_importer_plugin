@@ -1,10 +1,19 @@
 #include "gz_model_importer_gui/ImporterBackend.hh"
 
+#include <ament_index_cpp/get_package_prefix.hpp>
+#include <QCoreApplication>
+#include <QFile>
 #include <QDir>
 #include <QFileInfo>
+#include <QProcess>
 #include <QRegExp>
 #include <QSet>
+#include <QStandardPaths>
+#include <QTemporaryFile>
+#include <QTextStream>
 #include <QTimer>
+#include <algorithm>
+#include <exception>
 #include <gz/common/Console.hh>
 
 #include "gz_model_importer_gui/ImportOptions.hh"
@@ -20,6 +29,80 @@
 
 namespace gz_model_importer_gui
 {
+
+struct ImporterBackend::RobotStatePublisherLaunch
+{
+  std::unique_ptr<QProcess> process;
+  std::unique_ptr<QTemporaryFile> paramsFile;
+  QString instanceName;
+  QString rosNamespace;
+  QString prefix;
+  QString executablePath;
+  qint64 pid{-1};
+};
+
+namespace
+{
+
+QString resolveRobotStatePublisherExecutable()
+{
+  const QString fromPath = QStandardPaths::findExecutable(
+      QStringLiteral("robot_state_publisher"));
+  if (!fromPath.isEmpty())
+    return fromPath;
+
+  try
+  {
+    const QString prefix = QString::fromStdString(
+        ament_index_cpp::get_package_prefix("robot_state_publisher"));
+    const QString executable = QDir(prefix).filePath(
+        QStringLiteral("lib/robot_state_publisher/robot_state_publisher"));
+    const QFileInfo info(executable);
+    if (info.exists() && info.isFile() && info.isExecutable())
+      return executable;
+
+    gzwarn << "[gz_model_importer_gui] robot_state_publisher executable not found at '"
+           << executable.toStdString() << "'\n";
+  }
+  catch (const std::exception &e)
+  {
+    gzwarn << "[gz_model_importer_gui] Failed to resolve robot_state_publisher package prefix: "
+           << e.what() << "\n";
+  }
+
+  return QString();
+}
+
+QStringList buildRobotStatePublisherArgs(
+    const QString &rosNamespace,
+    const QString &paramsFilePath)
+{
+  QStringList args;
+  args << QStringLiteral("--ros-args")
+       << QStringLiteral("-r")
+       << (QStringLiteral("__ns:=") + rosNamespace)
+       << QStringLiteral("--params-file")
+       << paramsFilePath;
+  return args;
+}
+
+QString buildRobotStatePublisherParams(const QString &resolvedUrdf)
+{
+  QString yaml;
+  QTextStream stream(&yaml);
+  stream << "/**:\n";
+  stream << "  ros__parameters:\n";
+  stream << "    use_sim_time: true\n";
+  stream << "    robot_description: |\n";
+
+  const QStringList lines = resolvedUrdf.split(QLatin1Char('\n'));
+  for (const QString &line : lines)
+    stream << "      " << line << "\n";
+
+  return yaml;
+}
+
+}  // namespace
 
 ImporterBackend::ImporterBackend(QObject *_parent)
 : QObject(_parent),
@@ -75,9 +158,23 @@ ImporterBackend::ImporterBackend(QObject *_parent)
   connect(importOptions_.get(), &ImportOptions::poseRollChanged,  scheduleMove);
   connect(importOptions_.get(), &ImportOptions::posePitchChanged, scheduleMove);
   connect(importOptions_.get(), &ImportOptions::poseYawChanged,   scheduleMove);
+
+  if (auto *app = QCoreApplication::instance())
+  {
+    connect(app, &QCoreApplication::aboutToQuit, this,
+        [this]()
+        {
+          gzmsg << "[gz_model_importer_gui] Qt application shutdown detected; cleaning up robot_state_publisher processes.\n";
+          stopRobotStatePublisherProcesses();
+        },
+        Qt::DirectConnection);
+  }
 }
 
-ImporterBackend::~ImporterBackend() = default;
+ImporterBackend::~ImporterBackend()
+{
+  stopRobotStatePublisherProcesses();
+}
 
 int     ImporterBackend::stateInt()  const { return static_cast<int>(state_); }
 QString ImporterBackend::stateName() const { return importerStateName(state_); }
@@ -97,6 +194,8 @@ QString ImporterBackend::worldName()       const { return worldName_; }
 QString ImporterBackend::preflightReport() const { return preflightReport_; }
 
 bool    ImporterBackend::hasRuntimeHint()     const { return !runtimeHint_.isEmpty(); }
+int     ImporterBackend::runtimeHintSensorCount() const { return runtimeHintSensorCount_; }
+QString ImporterBackend::runtimeHintSummary()  const { return runtimeHintSummary_; }
 QString ImporterBackend::runtimeHint()        const { return runtimeHint_; }
 QString ImporterBackend::runtimeHintDetails() const { return runtimeHintDetails_; }
 
@@ -117,6 +216,22 @@ void ImporterBackend::setXacroNamespace(const QString &v)
 
 bool    ImporterBackend::hasXacroPrefixArg() const { return hasXacroPrefixArg_; }
 QString ImporterBackend::xacroPrefix()       const { return xacroPrefix_; }
+
+bool ImporterBackend::robotStatePublisherSupported() const
+{
+  return currentFileFormat_ == FileFormat::Urdf ||
+         currentFileFormat_ == FileFormat::Xacro;
+}
+
+QString ImporterBackend::robotStatePublisherSupportText() const
+{
+  if (currentFileFormat_ == FileFormat::Sdf)
+  {
+    return QStringLiteral(
+        "robot_state_publisher requires a URDF or XACRO input.");
+  }
+  return QString();
+}
 
 void ImporterBackend::setXacroPrefix(const QString &v)
 {
@@ -153,6 +268,7 @@ void ImporterBackend::reset()
   importOptions_->reset();
 
   currentSdf_.clear();
+  currentResolvedUrdf_.clear();
   lastError_.clear();
   lastWarning_.clear();
   preflightReport_.clear();
@@ -174,6 +290,7 @@ void ImporterBackend::reset()
   emit xacroPrefixChanged();
   currentFilePath_.clear();
   currentFileFormat_ = FileFormat::Unknown;
+  emit robotStatePublisherSupportChanged();
 
   setState(ImporterState::Idle);
 }
@@ -278,7 +395,8 @@ void ImporterBackend::onFileError(const QString &msg)
   setError(msg);
 }
 
-void ImporterBackend::onLoadComplete(const QString &sdfContent)
+void ImporterBackend::onLoadComplete(const QString &sdfContent,
+                                     const QString &resolvedUrdfContent)
 {
   if (state_ != ImporterState::Expanding &&
       state_ != ImporterState::Converting)
@@ -290,6 +408,7 @@ void ImporterBackend::onLoadComplete(const QString &sdfContent)
 
   const RewriteResult rw = SdfUriRewriter::rewrite(sdfContent, modelDir_, modelsRoot_);
   currentSdf_ = rw.sdf;
+  currentResolvedUrdf_ = resolvedUrdfContent;
 
   const PreflightFindings pf = SdfPreflightChecker::analyze(rw.sdf, rw.unresolvedUris);
 
@@ -342,6 +461,8 @@ void ImporterBackend::onLoadComplete(const QString &sdfContent)
     if (hint.hasRuntimeRelevantContent)
     {
       QStringList hintParts;
+      runtimeHintSensorCount_ = hint.sensorCount;
+      runtimeHintSummary_ = hint.summary;
       if (hint.sensorCount > 0)
         hintParts << QStringLiteral(
             "This model contains %1 Gazebo sensor%2. "
@@ -364,6 +485,8 @@ void ImporterBackend::onLoadComplete(const QString &sdfContent)
     }
     else
     {
+      runtimeHintSensorCount_ = 0;
+      runtimeHintSummary_.clear();
       runtimeHint_.clear();
       runtimeHintDetails_.clear();
     }
@@ -448,6 +571,7 @@ void ImporterBackend::onSpawnComplete(const QString &name)
   emit lastErrorChanged(); emit lastWarningChanged(); emit preflightReportChanged();
   clearRuntimeHint();
   setState(ImporterState::Done);
+  maybeLaunchRobotStatePublisher();
 }
 
 void ImporterBackend::onSpawnFailed(const QString &error)
@@ -489,6 +613,144 @@ std::string ImporterBackend::applyOptionsToSdf()
       currentSdf_.toStdString(), opts, warnings);
   if (!warnings.isEmpty()) setWarning(warnings);
   return rewritten;
+}
+
+QString ImporterBackend::currentRosNamespace() const
+{
+  if (!hasXacroNamespaceArg_)
+    return QString();
+  return xacroNamespace_;
+}
+
+QString ImporterBackend::normalizeRosNamespace(const QString &value)
+{
+  QString ns = value.trimmed();
+  if (ns.isEmpty())
+    return QStringLiteral("/");
+
+  if (!ns.startsWith(QLatin1Char('/')))
+    ns.prepend(QLatin1Char('/'));
+
+  while (ns.size() > 1 && ns.endsWith(QLatin1Char('/')))
+    ns.chop(1);
+  return ns;
+}
+
+void ImporterBackend::maybeLaunchRobotStatePublisher()
+{
+  if (!importOptions_->launchRobotStatePublisher())
+    return;
+
+  if (!robotStatePublisherSupported())
+  {
+    const QString msg = QStringLiteral(
+        "robot_state_publisher launch skipped: only URDF and XACRO imports are supported.");
+    gzwarn << "[gz_model_importer_gui] " << msg.toStdString() << "\n";
+    setWarning(msg);
+    return;
+  }
+
+  const QString resolvedUrdf = currentResolvedUrdf_.trimmed();
+  if (resolvedUrdf.isEmpty())
+  {
+    const QString msg = QStringLiteral(
+        "robot_state_publisher launch skipped: resolved URDF is empty.");
+    gzerr << "[gz_model_importer_gui] " << msg.toStdString() << "\n";
+    setWarning(msg);
+    return;
+  }
+
+  auto launch = std::make_shared<RobotStatePublisherLaunch>();
+  launch->instanceName = importOptions_->instanceName().trimmed();
+  launch->rosNamespace = normalizeRosNamespace(currentRosNamespace());
+  launch->prefix = xacroPrefix_;
+  launch->paramsFile = std::make_unique<QTemporaryFile>(
+      QDir::tempPath() + QStringLiteral("/gz_model_importer_gui_rsp_XXXXXX.yaml"));
+
+  if (!launch->paramsFile->open())
+  {
+    const QString msg = QStringLiteral(
+        "robot_state_publisher launch failed: cannot create temporary params file.");
+    gzerr << "[gz_model_importer_gui] " << msg.toStdString() << "\n";
+    setWarning(msg);
+    return;
+  }
+
+  const QString params = buildRobotStatePublisherParams(resolvedUrdf);
+  const QByteArray paramsBytes = params.toUtf8();
+  if (launch->paramsFile->write(paramsBytes) != paramsBytes.size())
+  {
+    const QString msg = QStringLiteral(
+        "robot_state_publisher launch failed: cannot write params file.");
+    gzerr << "[gz_model_importer_gui] " << msg.toStdString() << "\n";
+    setWarning(msg);
+    return;
+  }
+
+  launch->paramsFile->flush();
+  launch->paramsFile->close();
+
+  const QString program = resolveRobotStatePublisherExecutable();
+  if (program.isEmpty())
+  {
+    const QString msg = QStringLiteral(
+        "robot_state_publisher launch failed: could not resolve the robot_state_publisher executable.");
+    gzerr << "[gz_model_importer_gui] " << msg.toStdString() << "\n";
+    setWarning(msg);
+    return;
+  }
+
+  const QStringList args = buildRobotStatePublisherArgs(
+      launch->rosNamespace, launch->paramsFile->fileName());
+
+  launch->process = std::make_unique<QProcess>(this);
+  launch->executablePath = program;
+  launch->process->setProgram(program);
+  launch->process->setArguments(args);
+  launch->process->setProcessChannelMode(QProcess::SeparateChannels);
+
+  gzmsg << "[gz_model_importer_gui] Launching robot_state_publisher"
+        << " instance='" << launch->instanceName.toStdString() << "'"
+        << " namespace='" << launch->rosNamespace.toStdString() << "'"
+        << " prefix='" << launch->prefix.toStdString() << "'"
+        << " params='" << launch->paramsFile->fileName().toStdString() << "'"
+        << " program='" << program.toStdString() << "'\n";
+
+  connect(launch->process.get(), &QProcess::started, this,
+      [launch]()
+      {
+        launch->pid = launch->process->processId();
+        gzmsg << "[gz_model_importer_gui] robot_state_publisher started"
+              << " executable='" << launch->executablePath.toStdString() << "'"
+              << " namespace='" << launch->rosNamespace.toStdString() << "'"
+              << " pid=" << launch->pid << "\n";
+      });
+
+  connect(launch->process.get(), &QProcess::errorOccurred, this,
+      [this, launch](QProcess::ProcessError error)
+      {
+        const QString msg = QStringLiteral(
+            "robot_state_publisher failed to start for namespace '%1' (%2).")
+            .arg(launch->rosNamespace)
+            .arg(static_cast<int>(error));
+        gzerr << "[gz_model_importer_gui] " << msg.toStdString() << "\n";
+        setWarning(msg);
+      });
+
+  connect(launch->process.get(),
+          QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+          this,
+          [this, launch](int exitCode, QProcess::ExitStatus exitStatus)
+          {
+            gzmsg << "[gz_model_importer_gui] robot_state_publisher exited"
+                  << " namespace='" << launch->rosNamespace.toStdString() << "'"
+                  << " exitCode=" << exitCode
+                  << " exitStatus=" << static_cast<int>(exitStatus) << "\n";
+            removeRobotStatePublisherLaunch(launch->process.get());
+          });
+
+  rspLaunches_.push_back(launch);
+  launch->process->start();
 }
 
 void ImporterBackend::doFinalSpawn()
@@ -559,8 +821,11 @@ void ImporterBackend::startFileLoad(const QString &path, FileFormat format)
   // is being re-processed, not a new user selection.
   const bool isNewFile = !reexpanding_;
   reexpanding_       = false;
+  const FileFormat previousFormat = currentFileFormat_;
   currentFilePath_   = path;
   currentFileFormat_ = format;
+  if (previousFormat != currentFileFormat_)
+    emit robotStatePublisherSupportChanged();
 
   // Only reset pose and assign a new name for genuinely new files.
   // Re-expansions (triggered by namespace/prefix changes) keep the
@@ -651,6 +916,8 @@ void ImporterBackend::startFileLoad(const QString &path, FileFormat format)
       xacroPrefix_.clear();
       emit xacroPrefixChanged();
     }
+    if (format == FileFormat::Sdf)
+      importOptions_->setLaunchRobotStatePublisher(false);
   }
 
   modelLoader_->load(path, format, effectiveArgs);
@@ -660,7 +927,11 @@ void ImporterBackend::startFileLoad(const QString &path, FileFormat format)
 QString ImporterBackend::extractModelBaseName(const QString &filePath)
 {
   const QFileInfo info(filePath);
-  const QString stem = info.completeBaseName().toLower();
+  QString stem = info.completeBaseName().toLower();
+  if (stem.endsWith(QStringLiteral(".urdf")))
+    stem.chop(QStringLiteral(".urdf").size());
+  else if (stem.endsWith(QStringLiteral(".sdf")))
+    stem.chop(QStringLiteral(".sdf").size());
   static const QStringList kGeneric = {"model", "robot", "description", "urdf"};
   const QString raw = kGeneric.contains(stem) ? info.dir().dirName().toLower() : stem;
 
@@ -717,9 +988,84 @@ void ImporterBackend::onPoseDebounceTimeout()
 
 void ImporterBackend::clearRuntimeHint()
 {
+  runtimeHintSensorCount_ = 0;
+  runtimeHintSummary_.clear();
   runtimeHint_.clear();
   runtimeHintDetails_.clear();
   emit runtimeHintChanged();
+}
+
+void ImporterBackend::stopRobotStatePublisherProcesses()
+{
+  if (shuttingDownRobotStatePublishers_)
+  {
+    gzmsg << "[gz_model_importer_gui] robot_state_publisher cleanup already in progress.\n";
+    return;
+  }
+  shuttingDownRobotStatePublishers_ = true;
+
+  const auto launches = rspLaunches_;
+  rspLaunches_.clear();
+
+  for (const auto &launch : launches)
+  {
+    if (!launch || !launch->process)
+      continue;
+
+    gzmsg << "[gz_model_importer_gui] robot_state_publisher cleanup requested"
+          << " executable='" << launch->executablePath.toStdString() << "'"
+          << " namespace='" << launch->rosNamespace.toStdString() << "'"
+          << " pid=" << launch->pid
+          << " state=" << static_cast<int>(launch->process->state()) << "\n";
+
+    if (launch->process->state() == QProcess::NotRunning)
+    {
+      gzmsg << "[gz_model_importer_gui] robot_state_publisher already stopped"
+            << " pid=" << launch->pid
+            << " finalState=" << static_cast<int>(launch->process->state()) << "\n";
+      continue;
+    }
+
+    gzmsg << "[gz_model_importer_gui] Stopping robot_state_publisher"
+          << " namespace='" << launch->rosNamespace.toStdString() << "'"
+          << " pid=" << launch->pid << " via terminate()\n";
+    launch->process->terminate();
+    const bool terminatedCleanly = launch->process->waitForFinished(1000);
+    gzmsg << "[gz_model_importer_gui] terminate() result"
+          << " pid=" << launch->pid
+          << " finished=" << (terminatedCleanly ? "true" : "false")
+          << " state=" << static_cast<int>(launch->process->state()) << "\n";
+
+    if (!terminatedCleanly)
+    {
+      gzwarn << "[gz_model_importer_gui] robot_state_publisher did not exit after terminate(), killing pid="
+             << launch->pid << "\n";
+      launch->process->kill();
+      const bool killed = launch->process->waitForFinished(1000);
+      gzmsg << "[gz_model_importer_gui] kill() result"
+            << " pid=" << launch->pid
+            << " finished=" << (killed ? "true" : "false")
+            << " state=" << static_cast<int>(launch->process->state()) << "\n";
+    }
+
+    gzmsg << "[gz_model_importer_gui] robot_state_publisher cleanup finished"
+          << " pid=" << launch->pid
+          << " finalState=" << static_cast<int>(launch->process->state()) << "\n";
+  }
+
+  shuttingDownRobotStatePublishers_ = false;
+}
+
+void ImporterBackend::removeRobotStatePublisherLaunch(void *processKey)
+{
+  const auto it = std::remove_if(
+      rspLaunches_.begin(),
+      rspLaunches_.end(),
+      [processKey](const std::shared_ptr<RobotStatePublisherLaunch> &launch)
+      {
+        return launch && launch->process.get() == processKey;
+      });
+  rspLaunches_.erase(it, rspLaunches_.end());
 }
 
 }  // namespace gz_model_importer_gui

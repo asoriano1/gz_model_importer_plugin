@@ -8,6 +8,7 @@
 #include <QTimer>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "gz_model_importer_gui/ImporterState.hh"
 #include "gz_model_importer_gui/FileLoader.hh"
@@ -46,6 +47,8 @@ class ImporterBackend : public QObject
 
   // ---- Lightweight ROS 2 hint (informational only, no process management) ----
   Q_PROPERTY(bool    hasRuntimeHint     READ hasRuntimeHint     NOTIFY runtimeHintChanged)
+  Q_PROPERTY(int     runtimeHintSensorCount READ runtimeHintSensorCount NOTIFY runtimeHintChanged)
+  Q_PROPERTY(QString runtimeHintSummary READ runtimeHintSummary NOTIFY runtimeHintChanged)
   Q_PROPERTY(QString runtimeHint        READ runtimeHint        NOTIFY runtimeHintChanged)
   Q_PROPERTY(QString runtimeHintDetails READ runtimeHintDetails NOTIFY runtimeHintChanged)
 
@@ -64,6 +67,13 @@ class ImporterBackend : public QObject
   Q_PROPERTY(bool    hasXacroPrefixArg READ hasXacroPrefixArg NOTIFY xacroPrefixChanged)
   Q_PROPERTY(QString xacroPrefix       READ xacroPrefix       WRITE setXacroPrefix
              NOTIFY xacroPrefixChanged)
+
+  Q_PROPERTY(bool    robotStatePublisherSupported
+             READ robotStatePublisherSupported
+             NOTIFY robotStatePublisherSupportChanged)
+  Q_PROPERTY(QString robotStatePublisherSupportText
+             READ robotStatePublisherSupportText
+             NOTIFY robotStatePublisherSupportChanged)
 
   Q_PROPERTY(gz_model_importer_gui::FileSelector   *fileSelector
              READ fileSelector   CONSTANT)
@@ -84,6 +94,8 @@ class ImporterBackend : public QObject
   public: QString preflightReport()  const;
 
   public: bool    hasRuntimeHint()     const;
+  public: int     runtimeHintSensorCount() const;
+  public: QString runtimeHintSummary() const;
   public: QString runtimeHint()        const;
   public: QString runtimeHintDetails() const;
 
@@ -94,6 +106,9 @@ class ImporterBackend : public QObject
   public: bool    hasXacroPrefixArg() const;
   public: QString xacroPrefix()       const;
   public: void    setXacroPrefix(const QString &v);
+
+  public: bool    robotStatePublisherSupported() const;
+  public: QString robotStatePublisherSupportText() const;
 
   public: FileSelector      *fileSelector()      const;
   public: ImportOptions     *importOptions()     const;
@@ -113,12 +128,14 @@ class ImporterBackend : public QObject
   signals: void runtimeHintChanged();
   signals: void xacroNamespaceChanged();
   signals: void xacroPrefixChanged();
+  signals: void robotStatePublisherSupportChanged();
 
   // ---- Collaborator slots ----
   private slots:
   void onFileReady(const QString &path, gz_model_importer_gui::FileFormat format);
   void onFileError(const QString &msg);
-  void onLoadComplete(const QString &sdfContent);
+  void onLoadComplete(const QString &sdfContent,
+                      const QString &resolvedUrdfContent);
   void onLoadFailed(const QString &error);
   void onPreviewSpawned(const QString &name);
   void onPreviewFailed(const QString &error);
@@ -144,6 +161,11 @@ class ImporterBackend : public QObject
   private: void resetPose();
   private: void assignUniqueName(const QString &filePath);
   private: void clearRuntimeHint();
+  private: QString currentRosNamespace() const;
+  private: void maybeLaunchRobotStatePublisher();
+  private: void stopRobotStatePublisherProcesses();
+  private: void removeRobotStatePublisherLaunch(void *processKey);
+  static QString normalizeRosNamespace(const QString &value);
   static QString extractModelBaseName(const QString &filePath);
 
   private: ImporterState state_{ImporterState::Idle};
@@ -151,10 +173,13 @@ class ImporterBackend : public QObject
   private: QString lastWarning_;
   private: QString worldName_;
   private: QString currentSdf_;
+  private: QString currentResolvedUrdf_;
   private: QString preflightReport_;
   private: QStringList xacroArgs_;
 
   // ROS 2 hint — populated in onLoadComplete(), cleared on reset/new load.
+  private: int runtimeHintSensorCount_{0};
+  private: QString runtimeHintSummary_;
   private: QString runtimeHint_;
   private: QString runtimeHintDetails_;
 
@@ -184,6 +209,10 @@ class ImporterBackend : public QObject
 
   // Per-session counters for unique name generation.
   private: QMap<QString, int> nameCounters_;
+
+  private: struct RobotStatePublisherLaunch;
+  private: std::vector<std::shared_ptr<RobotStatePublisherLaunch>> rspLaunches_;
+  private: bool shuttingDownRobotStatePublishers_{false};
 
   private: std::unique_ptr<FileSelector>      fileSelector_;
   private: std::unique_ptr<ImportOptions>     importOptions_;

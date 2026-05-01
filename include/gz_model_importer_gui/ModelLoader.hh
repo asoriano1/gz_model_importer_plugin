@@ -16,7 +16,8 @@ class XacroExpander;
 /// Orchestrates the load pipeline: FileLoader → XacroExpander → UrdfToSdf.
 ///
 /// Input:  file path + detected FileFormat + optional XACRO key:=value args
-/// Output: validated SDF string via loadComplete(), or loadFailed()
+/// Output: validated SDF string plus the resolved URDF used to generate it
+/// (empty for SDF inputs) via loadComplete(), or loadFailed()
 ///
 /// All async work is routed through XacroExpander (QProcess). The
 /// UrdfToSdf step is synchronous and runs on the Qt thread — it is fast
@@ -43,7 +44,8 @@ class ModelLoader : public QObject
 
   public: void cancel();
 
-  signals: void loadComplete(const QString &sdfContent);
+  signals: void loadComplete(const QString &sdfContent,
+                             const QString &resolvedUrdfContent);
   signals: void loadFailed(const QString &error);
   signals: void loadingChanged();
   signals: void lastErrorChanged();

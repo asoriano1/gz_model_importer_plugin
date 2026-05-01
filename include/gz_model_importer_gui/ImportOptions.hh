@@ -17,6 +17,11 @@ class ImportOptions : public QObject
   Q_PROPERTY(QString instanceName  READ instanceName  WRITE setInstanceName
              NOTIFY instanceNameChanged)
 
+  Q_PROPERTY(bool launchRobotStatePublisher
+             READ launchRobotStatePublisher
+             WRITE setLaunchRobotStatePublisher
+             NOTIFY launchRobotStatePublisherChanged)
+
   // Spawn pose (metres / radians)
   Q_PROPERTY(double poseX     READ poseX     WRITE setPoseX     NOTIFY poseXChanged)
   Q_PROPERTY(double poseY     READ poseY     WRITE setPoseY     NOTIFY poseYChanged)
@@ -29,6 +34,7 @@ class ImportOptions : public QObject
   public: ~ImportOptions() override;
 
   public: QString instanceName()  const;
+  public: bool launchRobotStatePublisher() const;
 
   public: double poseX()     const;
   public: double poseY()     const;
@@ -38,6 +44,7 @@ class ImportOptions : public QObject
   public: double poseYaw()   const;
 
   public: void setInstanceName(const QString &v);
+  public: void setLaunchRobotStatePublisher(bool v);
 
   public: void setPoseX(double v);
   public: void setPoseY(double v);
@@ -49,6 +56,7 @@ class ImportOptions : public QObject
   public: Q_INVOKABLE void reset();
 
   signals: void instanceNameChanged();
+  signals: void launchRobotStatePublisherChanged();
   signals: void poseXChanged();
   signals: void poseYChanged();
   signals: void poseZChanged();
@@ -57,6 +65,7 @@ class ImportOptions : public QObject
   signals: void poseYawChanged();
 
   private: QString instanceName_{"robot"};
+  private: bool launchRobotStatePublisher_{false};
   private: double poseX_{0.0}, poseY_{0.0}, poseZ_{0.1};
   private: double poseRoll_{0.0}, posePitch_{0.0}, poseYaw_{0.0};
 };
