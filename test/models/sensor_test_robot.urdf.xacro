@@ -116,11 +116,11 @@
     <origin xyz="0.2 0 0.11"/>
   </joint>
 
-  <!-- LiDAR sensor (Gazebo Harmonic type="lidar", not deprecated "ray").
+  <!-- LiDAR sensor (Gazebo Harmonic / Ignition pattern uses type="gpu_lidar").
        360° horizontal scan, 30 m range.
        topic: gz → /<ns>/scan  -->
   <gazebo reference="${prefix_p}laser_link">
-    <sensor name="${prefix_p}lidar" type="lidar">
+    <sensor name="${prefix_p}lidar" type="gpu_lidar">
       <always_on>1</always_on>
       <update_rate>10</update_rate>
       <lidar>

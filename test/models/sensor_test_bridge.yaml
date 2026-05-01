@@ -1,5 +1,10 @@
 # ros_gz_bridge configuration for sensor_test_robot.
 #
+# This file matches the XACRO default namespace "sensor_test".
+# If you import the model through gz_model_importer_gui and keep the
+# auto-generated namespace, copy this file and replace /sensor_test
+# with the namespace chosen in the importer UI.
+#
 # Use bridge_node (not parameter_bridge — that one only accepts CLI args):
 #
 #   ros2 run ros_gz_bridge bridge_node \

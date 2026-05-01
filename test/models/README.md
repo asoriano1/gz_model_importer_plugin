@@ -71,6 +71,9 @@ No sensor topics should be published during preview (plugins stripped).
 **After final import — start the bridge:**
 ```bash
 # bridge_node accepts a config file; parameter_bridge only takes CLI args
+# sensor_test_bridge.yaml matches the XACRO default namespace "sensor_test"
+# If you keep the importer-proposed namespace, duplicate the file and
+# replace /sensor_test with the namespace shown in the UI.
 ros2 run ros_gz_bridge bridge_node \
   --ros-args -p config_file:=$(pwd)/sensor_test_bridge.yaml
 ```
