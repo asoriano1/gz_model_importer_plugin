@@ -168,24 +168,9 @@ Rectangle {
       ColumnLayout {
         id: mainCol
         anchors { top: parent.top; left: parent.left; right: parent.right; margins: 10 }
-        spacing: 5
+        spacing: 4
 
-        // ---- Section 1: preview banner (only while preview is live) ----
-        Rectangle {
-          visible: isPreviewActive
-          Layout.fillWidth: true
-          implicitHeight: 26
-          color: "#bf360c"
-          radius: 4
-
-          Label {
-            anchors.centerIn: parent
-            text: "MODEL PREVIEW ACTIVE  •  SIMULATION PAUSED"
-            color: "white"; font.bold: true; font.pixelSize: 12
-          }
-        }
-
-        // ---- Section 2: status row ----
+        // ---- Section 1: status row ----
         Rectangle {
           Layout.fillWidth: true
           implicitHeight: statusRow.implicitHeight + 10
@@ -243,7 +228,7 @@ Rectangle {
           }
         }
 
-        // ---- Section 3: model file selection ----
+        // ---- Section 2: model file selection ----
         Rectangle {
           Layout.fillWidth: true
           implicitHeight: fileCol.implicitHeight + 16
@@ -259,9 +244,35 @@ Rectangle {
             }
             spacing: 4
 
-            Label {
-              text: "Model file"
-              font.bold: true; font.pixelSize: 12
+            RowLayout {
+              Layout.fillWidth: true
+              spacing: 8
+
+              Label {
+                text: "Model file"
+                font.bold: true
+                font.pixelSize: 12
+              }
+
+              Item { Layout.fillWidth: true }
+
+              RowLayout {
+                visible: fileSelector.detectedFormat.length > 0
+                spacing: 4
+
+                Label {
+                  text: "Format:"
+                  font.pixelSize: 10
+                  color: "#757575"
+                }
+
+                Label {
+                  text: fileSelector.detectedFormat
+                  font.pixelSize: 10
+                  font.bold: true
+                  color: "#424242"
+                }
+              }
             }
 
             // File picker row: [name+path   |  BROWSE]
@@ -313,17 +324,6 @@ Rectangle {
                 enabled: !isBusy
                 implicitWidth: 80
                 onClicked: fileDialog.open()
-              }
-            }
-
-            // Detected format badge
-            RowLayout {
-              visible: fileSelector.detectedFormat.length > 0
-              spacing: 6
-              Label { text: "Format:"; font.pixelSize: 11; color: "#616161" }
-              Label {
-                text:  fileSelector.detectedFormat
-                font.pixelSize: 11; font.bold: true; color: "#333"
               }
             }
 
@@ -487,47 +487,53 @@ Rectangle {
             }
 
             // ---- Highlight mode (only while preview entity is live) ----
-            RowLayout {
+            ColumnLayout {
               visible: isPreviewActive
-              Layout.fillWidth: true; spacing: 8
+              Layout.fillWidth: true
+              spacing: 2
 
-              Label { text: "Highlight:"; font.pixelSize: 12; color: "#555" }
+              RowLayout {
+                anchors.horizontalCenter: undefined
+                Layout.alignment: Qt.AlignHCenter
+                spacing: 8
 
-              ComboBox {
-                id: highlightCombo
-                font.pixelSize: 12
-                Layout.preferredWidth: 130
-                // ComboBox index: 0=Wireframe  1=Transparent  2=None
-                // C++ highlightMode: 0=None  1=Transparency  2=Wireframe
-                model: ["Wireframe", "Transparent", "None"]
+                Label { text: "Highlight:"; font.pixelSize: 12; color: "#555" }
 
-                Component.onCompleted: {
-                  var m = importerPlugin.highlightMode
-                  currentIndex = (m === 2) ? 0 : (m === 1) ? 1 : 2
-                }
+                ComboBox {
+                  id: highlightCombo
+                  font.pixelSize: 12
+                  Layout.preferredWidth: 130
+                  // ComboBox index: 0=Wireframe  1=Transparent  2=None
+                  // C++ highlightMode: 0=None  1=Transparency  2=Wireframe
+                  model: ["Wireframe", "Transparent", "None"]
 
-                onActivated: {
-                  var mode = (index === 0) ? 2 : (index === 1) ? 1 : 0
-                  importerPlugin.highlightMode = mode
-                }
-
-                Connections {
-                  target: importerPlugin
-                  function onHighlightModeChanged() {
+                  Component.onCompleted: {
                     var m = importerPlugin.highlightMode
-                    highlightCombo.currentIndex = (m === 2) ? 0 : (m === 1) ? 1 : 2
+                    currentIndex = (m === 2) ? 0 : (m === 1) ? 1 : 2
+                  }
+
+                  onActivated: {
+                    var mode = (index === 0) ? 2 : (index === 1) ? 1 : 0
+                    importerPlugin.highlightMode = mode
+                  }
+
+                  Connections {
+                    target: importerPlugin
+                    function onHighlightModeChanged() {
+                      var m = importerPlugin.highlightMode
+                      highlightCombo.currentIndex = (m === 2) ? 0 : (m === 1) ? 1 : 2
+                    }
                   }
                 }
               }
 
-              // TODO: Transparent mode may not render correctly — Material::Clone()
-              // in gz-rendering8 does not fully preserve Ogre2 PBR shaders.
-              // Wireframe is the reliable default.
               Label {
                 visible: importerPlugin.highlightMode === 1
                 text: "(Transparent may not render correctly)"
                 font.pixelSize: 10; font.italic: true; color: "#e65100"
-                wrapMode: Text.Wrap; Layout.fillWidth: true
+                wrapMode: Text.Wrap
+                horizontalAlignment: Text.AlignHCenter
+                Layout.fillWidth: true
               }
             }
           }
@@ -536,7 +542,7 @@ Rectangle {
         // ---- Section 7: ROS 2 bridge hint (informational only) ----
         Rectangle {
           id: runtimeHintCard
-          visible: backend.hasRuntimeHint
+          visible: false && backend.hasRuntimeHint
           Layout.fillWidth: true
           implicitHeight: hintCol.implicitHeight + 16
           color: "#fff8e1"
@@ -643,7 +649,7 @@ Rectangle {
         // ---- Section 8: collapsible details / log output ----
         Rectangle {
           id: logsCard
-          visible: hasLogs
+          visible: false && hasLogs
           Layout.fillWidth: true
           implicitHeight: logsToggleRow.implicitHeight +
                           (logsExpanded ? logsContent.implicitHeight + 8 : 0) +
@@ -758,10 +764,10 @@ Rectangle {
 
           // "Cancel Import" — only while an operation is actively cancellable.
           Button {
-            text: "Cancel Import"
+            text: "Cancel"
             font.pixelSize: 12
             visible: isCancellable
-            implicitWidth: 104
+            implicitWidth: 82
             onClicked: {
               logsCard.logsExpanded = false
               backend.reset()
