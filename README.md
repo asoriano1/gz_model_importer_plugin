@@ -23,6 +23,10 @@ This repository provides the **Model Importer** step.
 - Optionally starts `robot_state_publisher` after importing URDF / XACRO models
 - Provides a standard ROS 2 launch entry point that opens Gazebo with the plugin already loaded
 
+## Demo
+
+![Import workflow](demo.gif)
+
 ## Requirements
 
 - Ubuntu 24.04
