@@ -1,8 +1,12 @@
 #include "gz_model_importer_gui/RuntimeHintAnalyzer.hh"
 
+#include <ament_index_cpp/get_package_prefix.hpp>
 #include <functional>
 
+#include <QDir>
 #include <QFile>
+#include <QFileInfo>
+#include <QRegularExpression>
 #include <QSet>
 
 #include <tinyxml2.h>
@@ -16,6 +20,12 @@ namespace
 // ---- Plugin filename classification ----------------------------------------
 
 enum class PluginClass { Ros2Control, RosPlugin, Unrelated };
+
+struct ControllerParamsSummary
+{
+  int count{0};
+  QStringList names;
+};
 
 static PluginClass classifyFilename(const QString &fn)
 {
@@ -63,13 +73,246 @@ static bool sensorHasRosPlugin(const tinyxml2::XMLElement *sensorEl)
   return false;
 }
 
+static int leadingIndent(const QString &line)
+{
+  int indent = 0;
+  for (const QChar ch : line)
+  {
+    if (ch == QLatin1Char(' '))
+      ++indent;
+    else if (ch == QLatin1Char('\t'))
+      indent += 2;
+    else
+      break;
+  }
+  return indent;
+}
+
+static QString resolvePackageShareDir(
+    const QString &packageName,
+    const QString &originalPath)
+{
+  if (packageName.isEmpty())
+    return {};
+
+  try
+  {
+    const QString prefix = QString::fromStdString(
+        ament_index_cpp::get_package_prefix(packageName.toStdString()));
+    const QString shareDir = QDir(prefix).filePath(
+        QStringLiteral("share/%1").arg(packageName));
+    if (QFileInfo::exists(shareDir))
+      return QDir(shareDir).absolutePath();
+  }
+  catch (const std::exception &)
+  {
+  }
+
+  QDir cursor = QFileInfo(originalPath).absoluteDir();
+  while (!cursor.absolutePath().isEmpty())
+  {
+    if (cursor.dirName() == packageName &&
+        QFileInfo::exists(cursor.filePath(QStringLiteral("package.xml"))))
+      return cursor.absolutePath();
+
+    const QString srcCandidate = cursor.filePath(QStringLiteral("src/%1").arg(packageName));
+    if (QFileInfo(srcCandidate).isDir())
+      return QDir(srcCandidate).absolutePath();
+
+    if (!cursor.cdUp())
+      break;
+  }
+
+  return {};
+}
+
+static QString resolveParametersPath(
+    const QString &rawPath,
+    const QString &originalPath)
+{
+  QString path = rawPath.trimmed();
+  if ((path.startsWith(QLatin1Char('"')) && path.endsWith(QLatin1Char('"'))) ||
+      (path.startsWith(QLatin1Char('\'')) && path.endsWith(QLatin1Char('\''))))
+  {
+    path = path.mid(1, path.size() - 2).trimmed();
+  }
+
+  if (path.isEmpty())
+    return {};
+
+  QFileInfo directInfo(path);
+  if (directInfo.isAbsolute() && directInfo.exists())
+    return directInfo.absoluteFilePath();
+
+  const QRegularExpression findExpr(
+      QStringLiteral(R"(^\$\(\s*find\s+([^)\/\s]+)\s*\)(/.*)?$)"));
+  const QRegularExpressionMatch findMatch = findExpr.match(path);
+  if (findMatch.hasMatch())
+  {
+    const QString shareDir = resolvePackageShareDir(
+        findMatch.captured(1), originalPath);
+    if (!shareDir.isEmpty())
+    {
+      const QString suffix = findMatch.captured(2).remove(0, 1);
+      const QString candidate = QDir(shareDir).filePath(suffix);
+      if (QFileInfo::exists(candidate))
+        return QDir::cleanPath(candidate);
+    }
+  }
+
+  const QRegularExpression packageExpr(
+      QStringLiteral(R"(^package://([^/]+)/(.+)$)"));
+  const QRegularExpressionMatch packageMatch = packageExpr.match(path);
+  if (packageMatch.hasMatch())
+  {
+    const QString shareDir = resolvePackageShareDir(
+        packageMatch.captured(1), originalPath);
+    if (!shareDir.isEmpty())
+    {
+      const QString candidate = QDir(shareDir).filePath(packageMatch.captured(2));
+      if (QFileInfo::exists(candidate))
+        return QDir::cleanPath(candidate);
+    }
+  }
+
+  const QFileInfo originalInfo(originalPath);
+  const QString relativeCandidate = originalInfo.absoluteDir().filePath(path);
+  if (QFileInfo::exists(relativeCandidate))
+    return QDir::cleanPath(relativeCandidate);
+
+  return {};
+}
+
+static ControllerParamsSummary parseControllerParamsFile(const QString &path)
+{
+  ControllerParamsSummary summary;
+
+  QFile file(path);
+  if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+    return summary;
+
+  static const QSet<QString> kIgnoredKeys = {
+    QStringLiteral("update_rate"),
+    QStringLiteral("use_sim_time"),
+    QStringLiteral("enforce_command_limits"),
+    QStringLiteral("cpu_affinity"),
+    QStringLiteral("thread_priority"),
+    QStringLiteral("lock_memory"),
+    QStringLiteral("diagnostics"),
+    QStringLiteral("fallback_controllers"),
+  };
+
+  bool inControllerManager = false;
+  bool inRosParameters = false;
+  int controllerManagerIndent = -1;
+  int rosParametersIndent = -1;
+  QString currentKey;
+  int currentKeyIndent = -1;
+  bool currentKeyHasType = false;
+  QSet<QString> seenNames;
+
+  const auto flushCurrentKey = [&]()
+  {
+    if (!currentKey.isEmpty() && currentKeyHasType &&
+        !kIgnoredKeys.contains(currentKey.toLower()) &&
+        !seenNames.contains(currentKey))
+    {
+      seenNames.insert(currentKey);
+      summary.names << currentKey;
+      ++summary.count;
+    }
+    currentKey.clear();
+    currentKeyIndent = -1;
+    currentKeyHasType = false;
+  };
+
+  while (!file.atEnd())
+  {
+    QString line = QString::fromUtf8(file.readLine());
+    const int commentPos = line.indexOf(QLatin1Char('#'));
+    if (commentPos >= 0)
+      line.truncate(commentPos);
+
+    const QString trimmed = line.trimmed();
+    if (trimmed.isEmpty())
+      continue;
+
+    const int indent = leadingIndent(line);
+
+    if (!inControllerManager)
+    {
+      if (trimmed == QStringLiteral("controller_manager:"))
+      {
+        inControllerManager = true;
+        controllerManagerIndent = indent;
+      }
+      continue;
+    }
+
+    if (!inRosParameters)
+    {
+      if (indent <= controllerManagerIndent)
+      {
+        inControllerManager = false;
+        continue;
+      }
+
+      if (trimmed == QStringLiteral("ros__parameters:"))
+      {
+        inRosParameters = true;
+        rosParametersIndent = indent;
+      }
+      continue;
+    }
+
+    if (indent <= rosParametersIndent)
+    {
+      flushCurrentKey();
+      inRosParameters = false;
+      if (trimmed == QStringLiteral("controller_manager:"))
+      {
+        inControllerManager = true;
+        controllerManagerIndent = indent;
+      }
+      else
+      {
+        inControllerManager = false;
+      }
+      continue;
+    }
+
+    static const QRegularExpression keyOnlyExpr(
+        QStringLiteral(R"(^([A-Za-z0-9_]+):\s*$)"));
+    const QRegularExpressionMatch keyMatch = keyOnlyExpr.match(trimmed);
+    if (keyMatch.hasMatch())
+    {
+      flushCurrentKey();
+      currentKey = keyMatch.captured(1);
+      currentKeyIndent = indent;
+      continue;
+    }
+
+    if (!currentKey.isEmpty() &&
+        indent > currentKeyIndent &&
+        trimmed.startsWith(QStringLiteral("type:")))
+    {
+      currentKeyHasType = true;
+    }
+  }
+
+  flushCurrentKey();
+  return summary;
+}
+
 // ---- SDF tree walker -------------------------------------------------------
 
 struct Collector
 {
   QSet<QString> seenPlugins;
+  QSet<QString> seenControllerParamRefs;
 
   int  sensorCount{0};
+  int  controllerCount{0};
   int  rosPluginCount{0};
   bool hasRos2Control{false};
 
@@ -95,6 +338,19 @@ struct Collector
           {
             hasRos2Control = true;
             detectedItems << QStringLiteral("ros2_control: %1").arg(filename);
+
+            for (const auto *params = el->FirstChildElement("parameters");
+                 params;
+                 params = params->NextSiblingElement("parameters"))
+            {
+              const char *text = params->GetText();
+              if (!text || !*text)
+                continue;
+
+              const QString ref = QString::fromUtf8(text).trimmed();
+              if (!ref.isEmpty() && !seenControllerParamRefs.contains(ref))
+                seenControllerParamRefs.insert(ref);
+            }
           }
           else
           {
@@ -201,6 +457,7 @@ RuntimeHint RuntimeHintAnalyzer::analyze(const QString &_sdfXml,
                                           const QString &_originalPath)
 {
   RuntimeHint hint;
+  Collector col;
 
   if (!_sdfXml.isEmpty())
   {
@@ -208,10 +465,10 @@ RuntimeHint RuntimeHintAnalyzer::analyze(const QString &_sdfXml,
     const QByteArray utf8 = _sdfXml.toUtf8();
     if (doc.Parse(utf8.constData(), utf8.size()) == tinyxml2::XML_SUCCESS)
     {
-      Collector col;
       col.walk(doc.RootElement());
 
       hint.sensorCount    = col.sensorCount;
+      hint.controllerCount = col.controllerCount;
       hint.rosPluginCount = col.rosPluginCount;
       hint.hasRos2Control = col.hasRos2Control;
       hint.detectedItems  = col.detectedItems;
@@ -225,17 +482,43 @@ RuntimeHint RuntimeHintAnalyzer::analyze(const QString &_sdfXml,
     hint.detectedItems << QStringLiteral("ros2_control (XACRO arg)");
   }
 
+  for (const QString &paramRef : col.seenControllerParamRefs)
+  {
+    const QString resolvedPath = resolveParametersPath(paramRef, _originalPath);
+    if (resolvedPath.isEmpty())
+    {
+      hint.detectedItems << QStringLiteral("controller params: %1 (unresolved)")
+          .arg(paramRef);
+      continue;
+    }
+
+    const ControllerParamsSummary params = parseControllerParamsFile(resolvedPath);
+    if (params.count == 0)
+    {
+      hint.detectedItems << QStringLiteral("controller params: %1 (no controllers detected)")
+          .arg(QFileInfo(resolvedPath).fileName());
+      continue;
+    }
+
+    hint.controllerCount += params.count;
+    for (const QString &name : params.names)
+      hint.detectedItems << QStringLiteral("controller: %1").arg(name);
+  }
+
   hint.hasRuntimeRelevantContent =
-      hint.sensorCount > 0 || hint.rosPluginCount > 0 || hint.hasRos2Control;
+      hint.sensorCount > 0 || hint.controllerCount > 0 ||
+      hint.rosPluginCount > 0 || hint.hasRos2Control;
 
   if (hint.hasRuntimeRelevantContent)
   {
     QStringList parts;
     if (hint.sensorCount > 0)
       parts << QStringLiteral("%1 sensor%2").arg(hint.sensorCount).arg(hint.sensorCount > 1 ? "s" : "");
+    if (hint.controllerCount > 0)
+      parts << QStringLiteral("%1 controller%2").arg(hint.controllerCount).arg(hint.controllerCount > 1 ? "s" : "");
     if (hint.rosPluginCount > 0)
       parts << QStringLiteral("%1 ROS plugin%2").arg(hint.rosPluginCount).arg(hint.rosPluginCount > 1 ? "s" : "");
-    if (hint.hasRos2Control)
+    if (hint.hasRos2Control && hint.controllerCount == 0)
       parts << QStringLiteral("ros2_control");
     hint.summary = parts.join(QStringLiteral(", "));
   }

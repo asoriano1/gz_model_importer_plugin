@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(gz_model_importer_gui CXX)
+project(gz_model_importer_plugin CXX)
 
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
@@ -116,13 +116,22 @@ install(DIRECTORY config/
   OPTIONAL
 )
 
+install(DIRECTORY launch/
+  DESTINATION share/${PROJECT_NAME}/launch
+)
+
+install(DIRECTORY worlds/
+  DESTINATION share/${PROJECT_NAME}/worlds
+  FILES_MATCHING PATTERN "*.sdf"
+)
+
 install(DIRECTORY test/worlds/
   DESTINATION share/${PROJECT_NAME}/worlds
   FILES_MATCHING PATTERN "*.sdf"
 )
 
 ament_environment_hooks(
-  "${CMAKE_CURRENT_SOURCE_DIR}/env-hooks/gz_model_importer_gui.sh.in"
+  "${CMAKE_CURRENT_SOURCE_DIR}/env-hooks/gz_model_importer_plugin.sh.in"
 )
 
 ament_package()

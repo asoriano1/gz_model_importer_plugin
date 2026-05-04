@@ -47,7 +47,7 @@ void ImportOptions::setPoseYaw(double v)
 void ImportOptions::reset()
 {
   setInstanceName(QStringLiteral("robot"));
-  setLaunchRobotStatePublisher(false);
+  setLaunchRobotStatePublisher(true);
   setPoseX(0.0);
   setPoseY(0.0);
   setPoseZ(0.1);

@@ -195,6 +195,7 @@ QString ImporterBackend::preflightReport() const { return preflightReport_; }
 
 bool    ImporterBackend::hasRuntimeHint()     const { return !runtimeHint_.isEmpty(); }
 int     ImporterBackend::runtimeHintSensorCount() const { return runtimeHintSensorCount_; }
+int     ImporterBackend::runtimeHintControllerCount() const { return runtimeHintControllerCount_; }
 QString ImporterBackend::runtimeHintSummary()  const { return runtimeHintSummary_; }
 QString ImporterBackend::runtimeHint()        const { return runtimeHint_; }
 QString ImporterBackend::runtimeHintDetails() const { return runtimeHintDetails_; }
@@ -462,12 +463,18 @@ void ImporterBackend::onLoadComplete(const QString &sdfContent,
     {
       QStringList hintParts;
       runtimeHintSensorCount_ = hint.sensorCount;
+      runtimeHintControllerCount_ = hint.controllerCount;
       runtimeHintSummary_ = hint.summary;
       if (hint.sensorCount > 0)
         hintParts << QStringLiteral(
             "This model contains %1 Gazebo sensor%2. "
             "To expose their topics to ROS 2, use the ROS 2 Bridge Manager plugin after import.")
             .arg(hint.sensorCount).arg(hint.sensorCount > 1 ? "s" : "");
+      if (hint.controllerCount > 0)
+        hintParts << QStringLiteral(
+            "Detected %1 controller definition%2 in ros2_control parameter files. "
+            "This importer does not load or activate controllers for you.")
+            .arg(hint.controllerCount).arg(hint.controllerCount > 1 ? "s" : "");
       if (hint.rosPluginCount > 0)
         hintParts << QStringLiteral(
             "This model contains ROS/Gazebo plugins. "
@@ -475,7 +482,8 @@ void ImporterBackend::onLoadComplete(const QString &sdfContent,
       if (hint.hasRos2Control)
         hintParts << QStringLiteral(
             "ros2_control-related elements were detected. "
-            "Controllers are not managed by this importer — "
+            "A /clock bridge is recommended so controller_manager can use sim time, and "
+            "controllers are still not managed by this importer — "
             "use your controller launch setup after import.");
 
       runtimeHint_ = hintParts.join(QStringLiteral(" "));
@@ -486,6 +494,7 @@ void ImporterBackend::onLoadComplete(const QString &sdfContent,
     else
     {
       runtimeHintSensorCount_ = 0;
+      runtimeHintControllerCount_ = 0;
       runtimeHintSummary_.clear();
       runtimeHint_.clear();
       runtimeHintDetails_.clear();
@@ -834,6 +843,7 @@ void ImporterBackend::startFileLoad(const QString &path, FileFormat format)
   {
     resetPose();
     assignUniqueName(path);
+    importOptions_->setLaunchRobotStatePublisher(format != FileFormat::Sdf);
   }
 
   gzmsg << "[gz_model_importer_gui] Loading: " << path.toStdString()
@@ -989,6 +999,7 @@ void ImporterBackend::onPoseDebounceTimeout()
 void ImporterBackend::clearRuntimeHint()
 {
   runtimeHintSensorCount_ = 0;
+  runtimeHintControllerCount_ = 0;
   runtimeHintSummary_.clear();
   runtimeHint_.clear();
   runtimeHintDetails_.clear();

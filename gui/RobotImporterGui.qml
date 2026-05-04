@@ -337,27 +337,66 @@ Rectangle {
           }
         }
 
-        // ---- Section 5: import options (collapsed after Done or error) ----
+        // ---- Section 5: import options (collapsed by default) ----
         Rectangle {
           id: optionsCard
           visible: showOptions
           Layout.fillWidth: true
-          implicitHeight: optionsCol.implicitHeight + 16
+          implicitHeight: optionsHeaderRow.implicitHeight +
+                          (optionsCard.expanded ? optionsContent.implicitHeight + 8 : 0) +
+                          16
           color: "#fafafa"
           border.color: "#e0e0e0"; border.width: 1
           radius: 4
 
+          property bool expanded: false
           property bool poseExpanded: false
 
-          ColumnLayout {
-            id: optionsCol
+          Item {
+            id: optionsHeaderRow
             anchors {
               top: parent.top; left: parent.left; right: parent.right
               topMargin: 8; leftMargin: 8; rightMargin: 8
             }
-            spacing: 4
+            implicitHeight: optionsHeaderContent.implicitHeight + 2
 
-            Label { text: "Import options"; font.bold: true; font.pixelSize: 12 }
+            RowLayout {
+              id: optionsHeaderContent
+              anchors.fill: parent
+              spacing: 8
+
+              Label {
+                text: (optionsCard.expanded ? "▼" : "▶") + "  Import options"
+                font.bold: true
+                font.pixelSize: 12
+                color: "#424242"
+              }
+
+              Label {
+                Layout.fillWidth: true
+                text: importOptions.instanceName.length > 0 ? "(" + importOptions.instanceName + ")" : ""
+                font.pixelSize: 11
+                color: "#757575"
+                elide: Text.ElideRight
+              }
+            }
+
+            MouseArea {
+              Layout.fillWidth: true
+              anchors.fill: parent
+              cursorShape: Qt.PointingHandCursor
+              onClicked: optionsCard.expanded = !optionsCard.expanded
+            }
+          }
+
+          ColumnLayout {
+            id: optionsContent
+            visible: optionsCard.expanded
+            anchors {
+              top: optionsHeaderRow.bottom; left: parent.left; right: parent.right
+              topMargin: 6; leftMargin: 8; rightMargin: 8
+            }
+            spacing: 4
 
             // Identity fields
             GridLayout {
@@ -392,28 +431,6 @@ Rectangle {
                 placeholderText: "(none)"
                 font.pixelSize: 12; Layout.fillWidth: true
                 onEditingFinished: backend.xacroPrefix = text
-              }
-            }
-
-            ColumnLayout {
-              Layout.fillWidth: true
-              spacing: 2
-
-              CheckBox {
-                text: "Launch robot_state_publisher after import"
-                checked: importOptions.launchRobotStatePublisher
-                enabled: backend.robotStatePublisherSupported
-                font.pixelSize: 12
-                onToggled: importOptions.launchRobotStatePublisher = checked
-              }
-
-              Label {
-                visible: backend.robotStatePublisherSupportText.length > 0
-                text: backend.robotStatePublisherSupportText
-                color: "#757575"
-                font.pixelSize: 11
-                wrapMode: Text.Wrap
-                Layout.fillWidth: true
               }
             }
 
@@ -536,113 +553,7 @@ Rectangle {
                 Layout.fillWidth: true
               }
             }
-          }
-        }
 
-        // ---- Section 7: ROS 2 bridge hint (informational only) ----
-        Rectangle {
-          id: runtimeHintCard
-          visible: false && backend.hasRuntimeHint
-          Layout.fillWidth: true
-          implicitHeight: hintCol.implicitHeight + 16
-          color: "#fff8e1"
-          border.color: "#ffb300"
-          border.width: 1
-          radius: 4
-
-          property bool expanded: false
-          property bool detailsExpanded: false
-
-          ColumnLayout {
-            id: hintCol
-            anchors {
-              top: parent.top; left: parent.left; right: parent.right
-              topMargin: 8; leftMargin: 8; rightMargin: 8
-            }
-            spacing: 4
-
-            Item {
-              Layout.fillWidth: true
-              implicitHeight: hintHeader.implicitHeight + 2
-
-              RowLayout {
-                id: hintHeader
-                anchors.fill: parent
-                spacing: 8
-
-                Label {
-                  text: (runtimeHintCard.expanded ? "▼" : "▶") + "  ROS 2 bridge hint"
-                  font.bold: true; font.pixelSize: 12; color: "#e65100"
-                }
-
-                Label {
-                  Layout.fillWidth: true
-                  text: backend.runtimeHintSensorCount > 0
-                        ? "(" + backend.runtimeHintSensorCount + " Gazebo sensor" +
-                          (backend.runtimeHintSensorCount > 1 ? "s" : "") + " detected)"
-                        : (backend.runtimeHintSummary.length > 0
-                           ? "(" + backend.runtimeHintSummary + ")"
-                           : "")
-                  font.pixelSize: 11
-                  color: "#795548"
-                  elide: Text.ElideRight
-                }
-              }
-              MouseArea {
-                anchors.fill: parent; cursorShape: Qt.PointingHandCursor
-                onClicked: runtimeHintCard.expanded = !runtimeHintCard.expanded
-              }
-            }
-
-            ColumnLayout {
-              visible: runtimeHintCard.expanded
-              Layout.fillWidth: true
-              spacing: 4
-
-              Label {
-                text: backend.runtimeHint
-                font.pixelSize: 11; color: "#4e342e"
-                wrapMode: Text.Wrap; Layout.fillWidth: true
-              }
-
-              Item {
-                Layout.fillWidth: true
-                implicitHeight: hintDetailsToggle.implicitHeight + 2
-                visible: backend.runtimeHintDetails.length > 0
-
-                Label {
-                  id: hintDetailsToggle
-                  anchors.verticalCenter: parent.verticalCenter
-                  text: (runtimeHintCard.detailsExpanded ? "▼" : "▶") + "  Detected items"
-                  font.pixelSize: 11; color: "#555"
-                }
-                MouseArea {
-                  anchors.fill: parent; cursorShape: Qt.PointingHandCursor
-                  onClicked: runtimeHintCard.detailsExpanded = !runtimeHintCard.detailsExpanded
-                }
-              }
-
-              Rectangle {
-                visible: runtimeHintCard.detailsExpanded && backend.runtimeHintDetails.length > 0
-                Layout.fillWidth: true
-                implicitHeight: hintDetailsLabel.implicitHeight + 8
-                color: "#fff3e0"; radius: 3; border.color: "#ffe082"; border.width: 1
-
-                Label {
-                  id: hintDetailsLabel
-                  anchors { left: parent.left; right: parent.right; top: parent.top; margins: 4 }
-                  text: backend.runtimeHintDetails
-                  font.pixelSize: 10; font.family: "monospace"
-                  color: "#4e342e"; wrapMode: Text.Wrap
-                }
-              }
-
-              Label {
-                text: "Load the 'ROS 2 Bridge Manager' Gazebo GUI plugin to inspect topics and create bridges."
-                font.pixelSize: 10; font.italic: true; color: "#795548"
-                wrapMode: Text.Wrap; Layout.fillWidth: true
-              }
-            }
           }
         }
 
@@ -737,6 +648,170 @@ Rectangle {
                 font.pixelSize: 10; font.family: "monospace"
                 color: "#333"; wrapMode: Text.Wrap
               }
+            }
+          }
+        }
+
+        // ---- Section 9: preview summary (collapsed by default) ----
+        Rectangle {
+          id: runtimeHintCard
+          visible: backend.hasRuntimeHint
+          Layout.fillWidth: true
+          implicitHeight: hintCol.implicitHeight + 16
+          color: "#f7f9fc"
+          border.color: "#cfd8dc"
+          border.width: 1
+          radius: 4
+
+          property bool expanded: false
+          property bool detailsExpanded: false
+
+          ColumnLayout {
+            id: hintCol
+            anchors {
+              top: parent.top; left: parent.left; right: parent.right
+              topMargin: 8; leftMargin: 8; rightMargin: 8
+            }
+            spacing: 4
+
+            Item {
+              Layout.fillWidth: true
+              implicitHeight: hintHeader.implicitHeight + 2
+
+              RowLayout {
+                id: hintHeader
+                anchors.fill: parent
+                spacing: 8
+
+                Label {
+                  text: (runtimeHintCard.expanded ? "▼" : "▶") + "  Preview summary"
+                  font.bold: true; font.pixelSize: 12; color: "#37474f"
+                }
+
+                Label {
+                  Layout.fillWidth: true
+                  text: {
+                    var parts = []
+                    if (backend.runtimeHintSensorCount > 0)
+                      parts.push(backend.runtimeHintSensorCount + " sensor" +
+                                 (backend.runtimeHintSensorCount > 1 ? "s" : ""))
+                    if (backend.runtimeHintControllerCount > 0)
+                      parts.push(backend.runtimeHintControllerCount + " controller" +
+                                 (backend.runtimeHintControllerCount > 1 ? "s" : ""))
+                    if (parts.length > 0)
+                      return "(" + parts.join(", ") + ")"
+                    if (backend.runtimeHintSummary.length > 0)
+                      return "(" + backend.runtimeHintSummary + ")"
+                    return ""
+                  }
+                  font.pixelSize: 11
+                  color: "#546e7a"
+                  elide: Text.ElideRight
+                }
+              }
+
+              MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: runtimeHintCard.expanded = !runtimeHintCard.expanded
+              }
+            }
+
+            ColumnLayout {
+              visible: runtimeHintCard.expanded
+              Layout.fillWidth: true
+              spacing: 4
+
+              Label {
+                visible: backend.runtimeHintSensorCount > 0
+                text: "Gazebo sensors detected: " + backend.runtimeHintSensorCount
+                font.pixelSize: 11
+                color: "#37474f"
+              }
+
+              Label {
+                visible: backend.runtimeHintControllerCount > 0
+                text: "Controller definitions detected: " + backend.runtimeHintControllerCount
+                font.pixelSize: 11
+                color: "#37474f"
+              }
+
+              Label {
+                text: backend.runtimeHint
+                font.pixelSize: 11; color: "#455a64"
+                wrapMode: Text.Wrap; Layout.fillWidth: true
+              }
+
+              Item {
+                Layout.fillWidth: true
+                implicitHeight: hintDetailsToggle.implicitHeight + 2
+                visible: backend.runtimeHintDetails.length > 0
+
+                Label {
+                  id: hintDetailsToggle
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: (runtimeHintCard.detailsExpanded ? "▼" : "▶") + "  Detected items"
+                  font.pixelSize: 11; color: "#607d8b"
+                }
+                MouseArea {
+                  anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                  onClicked: runtimeHintCard.detailsExpanded = !runtimeHintCard.detailsExpanded
+                }
+              }
+
+              Rectangle {
+                visible: runtimeHintCard.detailsExpanded && backend.runtimeHintDetails.length > 0
+                Layout.fillWidth: true
+                implicitHeight: hintDetailsLabel.implicitHeight + 8
+                color: "#ffffff"
+                radius: 3
+                border.color: "#d7dde2"
+                border.width: 1
+
+                Label {
+                  id: hintDetailsLabel
+                  anchors { left: parent.left; right: parent.right; top: parent.top; margins: 4 }
+                  text: backend.runtimeHintDetails
+                  font.pixelSize: 10; font.family: "monospace"
+                  color: "#455a64"; wrapMode: Text.Wrap
+                }
+              }
+            }
+          }
+        }
+
+        Rectangle {
+          visible: showOptions
+          Layout.fillWidth: true
+          implicitHeight: rspCol.implicitHeight + 10
+          color: "#f8fbf5"
+          border.color: "#d6e6c6"
+          border.width: 1
+          radius: 4
+
+          ColumnLayout {
+            id: rspCol
+            anchors {
+              top: parent.top; left: parent.left; right: parent.right
+              topMargin: 5; leftMargin: 6; rightMargin: 6
+            }
+            spacing: 1
+
+            CheckBox {
+              text: "Launch robot_state_publisher after import"
+              checked: importOptions.launchRobotStatePublisher
+              enabled: backend.robotStatePublisherSupported
+              font.pixelSize: 11
+              onToggled: importOptions.launchRobotStatePublisher = checked
+            }
+
+            Label {
+              visible: backend.robotStatePublisherSupportText.length > 0
+              text: backend.robotStatePublisherSupportText
+              color: "#757575"
+              font.pixelSize: 10
+              wrapMode: Text.Wrap
+              Layout.fillWidth: true
             }
           }
         }

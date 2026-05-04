@@ -1,6 +1,6 @@
-# gz_model_importer_gui
+# gz_model_importer_plugin
 
-Gazebo Sim (Harmonic) GUI plugin for ROS 2 Jazzy that provides a modal robot importer workflow — no launch files required.
+Gazebo Sim (Harmonic) GUI plugin for ROS 2 Jazzy that provides a modal robot importer workflow with a standard ROS 2 launch entry point.
 
 ## Gazebo ROS 2 Model Runtime Suite
 
@@ -76,6 +76,7 @@ With the importer and bridge manager together, a typical user can:
 - **File formats**: URDF, XACRO (expanded via `xacro`), SDF
 - **URI resolution**: `model://` and `package://` URIs resolved via `ament_index` and `GZ_SIM_RESOURCE_PATH`
 - **Preview**: spawns the robot as a static entity before final import; camera auto-focuses and auto-restores
+- **Preview summary**: collapsed card in preview/configuration mode showing detected Gazebo sensors and `ros2_control` controller definitions
 - **Auto-selection**: preview entity is automatically selected in the Gazebo Entity Tree on spawn
 - **Highlight modes**: Wireframe, Transparent, or None (user-selectable; model appearance unchanged by default)
 - **Preflight report**: detects unresolved URIs, Ogre material scripts, mesh collisions, and embedded plugins before import
@@ -101,33 +102,69 @@ With the importer and bridge manager together, a typical user can:
 ```bash
 cd <workspace>
 source /opt/ros/jazzy/setup.bash
-colcon build --symlink-install --packages-select gz_model_importer_gui
+colcon build --symlink-install --packages-select gz_model_importer_plugin
 source install/setup.bash
 ```
 
 ## Usage
 
-### Quick start: Gazebo + demo world + plugin
+### Recommended launch flow
 
-The package installs both a GUI config and a ready-to-use demo world. After
-building and sourcing the workspace, this command starts Gazebo with the plugin
-already loaded:
+Start Gazebo through the package launch file when you want the Robot Importer
+panel available immediately and the required Gazebo runtime paths prepared
+automatically:
+
+```bash
+ros2 launch gz_model_importer_plugin gazebo_importer.launch.py
+```
+
+To open a specific world instead:
+
+```bash
+ros2 launch gz_model_importer_plugin gazebo_importer.launch.py \
+  world:=/absolute/path/to/world.sdf
+```
+
+This launch file:
+
+- starts `gz sim`
+- loads the Robot Importer GUI plugin through the package GUI config
+- prepends the package `lib` directory to `GZ_GUI_PLUGIN_PATH`
+- prepends the `gz_ros2_control` `lib` directory to `GZ_SIM_SYSTEM_PLUGIN_PATH` when `gz_ros2_control` is installed
+- starts a `ros_gz_bridge` `/clock` bridge when `ros_gz_bridge` is available so ROS nodes using `use_sim_time` can follow Gazebo time
+
+Useful optional arguments:
+
+- `verbose:=4`
+- `gui:=false` for server-only mode (`gz sim -s`)
+- `paused:=true`
+- `bridge_clock:=false` to skip the automatic `/clock` bridge
+- `render_engine:=ogre2` or `render_engine:=ogre`
+
+If `world` is omitted, the launch file opens the packaged demo world
+`worlds/robotnik_world.sdf`.
+
+### Manual Gazebo start
+
+The package still installs a GUI config and demo worlds for direct `gz sim`
+usage when needed. After building and sourcing the workspace, this command
+starts the default Robotnik demo world with the plugin already loaded:
 
 ```bash
 gz sim \
-  $(ros2 pkg prefix gz_model_importer_gui)/share/gz_model_importer_gui/worlds/importer_test.sdf \
-  --gui-config $(ros2 pkg prefix gz_model_importer_gui)/share/gz_model_importer_gui/config/gz_model_importer_gui.config
+  $(ros2 pkg prefix gz_model_importer_plugin)/share/gz_model_importer_plugin/worlds/robotnik_world.sdf \
+  --gui-config $(ros2 pkg prefix gz_model_importer_plugin)/share/gz_model_importer_plugin/config/gz_model_importer_plugin.config
 ```
 
-If you prefer the Robotnik environment world shipped with the package, use:
+If you prefer a lighter alternative world, use:
 
 ```bash
 gz sim \
-  $(ros2 pkg prefix gz_model_importer_gui)/share/gz_model_importer_gui/worlds/robotnik_world.sdf \
-  --gui-config $(ros2 pkg prefix gz_model_importer_gui)/share/gz_model_importer_gui/config/gz_model_importer_gui.config
+  $(ros2 pkg prefix gz_model_importer_plugin)/share/gz_model_importer_plugin/worlds/gazebo_importer_default.sdf \
+  --gui-config $(ros2 pkg prefix gz_model_importer_plugin)/share/gz_model_importer_plugin/config/gz_model_importer_plugin.config
 ```
 
-If `ros2 pkg prefix gz_model_importer_gui` reports `Package not found`, the
+If `ros2 pkg prefix gz_model_importer_plugin` reports `Package not found`, the
 workspace has not been sourced yet or the package has not been built in the
 current shell.
 
@@ -137,8 +174,12 @@ The plugin ships a ready-to-use GUI config:
 
 ```bash
 gz sim <your_world.sdf> \
-  --gui-config $(ros2 pkg prefix gz_model_importer_gui)/share/gz_model_importer_gui/config/gz_model_importer_gui.config
+  --gui-config $(ros2 pkg prefix gz_model_importer_plugin)/share/gz_model_importer_plugin/config/gz_model_importer_plugin.config
 ```
+
+The `ros2 launch gz_model_importer_plugin gazebo_importer.launch.py` entry point is
+still the recommended flow because it also prepares `GZ_GUI_PLUGIN_PATH` and
+`GZ_SIM_SYSTEM_PLUGIN_PATH` for you.
 
 Or add the plugin entry to an existing world file's `<gui>` section:
 
@@ -157,6 +198,8 @@ Or add the plugin entry to an existing world file's `<gui>` section:
 7. Click **Import** — the plugin spawns the robot into the world.
 
 A preview entity (static, plugins stripped) is spawned automatically before the final import so you can inspect the model in the scene first. Click **Cancel** to discard the preview without importing. `robot_state_publisher` is never launched during preview.
+
+During preview/configuration, the plugin also shows a compact collapsed summary card with the detected Gazebo sensor count and any controller definitions found in referenced `ros2_control` parameter files.
 
 ## URI resolution order
 
@@ -222,7 +265,7 @@ pgrep -af robot_state_publisher
 
 To bridge Gazebo sensor topics to ROS 2 after import, use the separate **ROS 2 Bridge Manager** plugin, [`gz_ros2_bridge_manager`](https://github.com/asoriano1/gz_ros2_bridge_manager), which inspects models already present in the Gazebo world and manages `ros_gz_bridge` instances.
 
-Models with `ros2_control`-related elements still require an external controller launch setup.
+Models with `ros2_control`-related elements still require an external controller launch setup. The package launch now bridges `/clock` automatically when `ros_gz_bridge` is available, which helps `controller_manager` instances running with `use_sim_time=true`.
 
 ## Known limitations
 

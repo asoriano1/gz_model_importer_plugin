@@ -14,6 +14,7 @@ struct RuntimeHint
   bool hasRuntimeRelevantContent{false};
 
   int  sensorCount{0};      ///< native Gazebo sensors without a ROS plugin child
+  int  controllerCount{0};  ///< controllers detected in ros2_control params
   int  rosPluginCount{0};   ///< gazebo_ros / gz_ros plugin filenames detected
   bool hasRos2Control{false};
 

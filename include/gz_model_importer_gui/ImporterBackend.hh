@@ -48,6 +48,7 @@ class ImporterBackend : public QObject
   // ---- Lightweight ROS 2 hint (informational only, no process management) ----
   Q_PROPERTY(bool    hasRuntimeHint     READ hasRuntimeHint     NOTIFY runtimeHintChanged)
   Q_PROPERTY(int     runtimeHintSensorCount READ runtimeHintSensorCount NOTIFY runtimeHintChanged)
+  Q_PROPERTY(int     runtimeHintControllerCount READ runtimeHintControllerCount NOTIFY runtimeHintChanged)
   Q_PROPERTY(QString runtimeHintSummary READ runtimeHintSummary NOTIFY runtimeHintChanged)
   Q_PROPERTY(QString runtimeHint        READ runtimeHint        NOTIFY runtimeHintChanged)
   Q_PROPERTY(QString runtimeHintDetails READ runtimeHintDetails NOTIFY runtimeHintChanged)
@@ -95,6 +96,7 @@ class ImporterBackend : public QObject
 
   public: bool    hasRuntimeHint()     const;
   public: int     runtimeHintSensorCount() const;
+  public: int     runtimeHintControllerCount() const;
   public: QString runtimeHintSummary() const;
   public: QString runtimeHint()        const;
   public: QString runtimeHintDetails() const;
@@ -179,6 +181,7 @@ class ImporterBackend : public QObject
 
   // ROS 2 hint — populated in onLoadComplete(), cleared on reset/new load.
   private: int runtimeHintSensorCount_{0};
+  private: int runtimeHintControllerCount_{0};
   private: QString runtimeHintSummary_;
   private: QString runtimeHint_;
   private: QString runtimeHintDetails_;

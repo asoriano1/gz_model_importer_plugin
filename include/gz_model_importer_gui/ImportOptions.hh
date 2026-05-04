@@ -65,7 +65,7 @@ class ImportOptions : public QObject
   signals: void poseYawChanged();
 
   private: QString instanceName_{"robot"};
-  private: bool launchRobotStatePublisher_{false};
+  private: bool launchRobotStatePublisher_{true};
   private: double poseX_{0.0}, poseY_{0.0}, poseZ_{0.1};
   private: double poseRoll_{0.0}, posePitch_{0.0}, poseYaw_{0.0};
 };
