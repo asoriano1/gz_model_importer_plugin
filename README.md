@@ -15,6 +15,16 @@ This package is part of the **Gazebo ROS 2 Model Runtime Suite**:
 
 This repository provides the **Model Importer** step.
 
+```mermaid
+flowchart LR
+  A[URDF / XACRO / SDF] --> B[Model Importer<br/>preview + spawn + optional robot_state_publisher]
+  B --> C[Gazebo world]
+  C --> D[Bridge Manager<br/>discover sensors/topics + run ros_gz_bridge]
+  C --> E[Control Manager<br/>in development]
+  D --> F[ROS 2 applications<br/>RViz / Nav2 / MoveIt / custom nodes]
+  E --> F
+```
+
 ## What It Does
 
 - Imports local URDF, XACRO, and SDF models into the active Gazebo world
