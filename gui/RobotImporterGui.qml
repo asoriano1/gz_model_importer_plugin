@@ -94,18 +94,85 @@ Rectangle {
     return s
   }
 
+  // Boxed form field used by the compact two-column import options form.
+  component CompactFormField: TextField {
+    id: fieldControl
+
+    Layout.fillWidth: true
+    Layout.minimumHeight: 34
+    Layout.preferredHeight: 34
+    font.pixelSize: 12
+    selectByMouse: true
+    leftPadding: 10
+    rightPadding: 10
+    topPadding: 7
+    bottomPadding: 7
+    verticalAlignment: TextInput.AlignVCenter
+
+    background: Rectangle {
+      radius: 4
+      color: fieldControl.enabled ? "#ffffff" : "#f3f3f3"
+      border.color: fieldControl.activeFocus ? "#64b5f6" : "#c7cdd4"
+      border.width: 1
+    }
+  }
+
   // Numeric pose input that stays in sync with an ImportOptions property.
-  component PoseField: TextField {
+  component PoseField: CompactFormField {
     property double modelValue: 0.0
     property bool   userEditing: false
 
     text: modelValue.toFixed(3)
-    font.pixelSize: 12
     horizontalAlignment: Text.AlignRight
     validator: DoubleValidator { decimals: 3; notation: DoubleValidator.StandardNotation }
 
     onActiveFocusChanged: userEditing = activeFocus
     onModelValueChanged:  if (!userEditing) text = modelValue.toFixed(3)
+  }
+
+  component FormRowLabel: Label {
+    Layout.preferredWidth: 98
+    Layout.minimumWidth: 98
+    Layout.alignment: Qt.AlignVCenter
+    font.pixelSize: 12
+    color: "#555"
+    verticalAlignment: Text.AlignVCenter
+  }
+
+  component FormSubheader: Label {
+    Layout.fillWidth: true
+    font.pixelSize: 11
+    font.bold: true
+    color: "#616161"
+    verticalAlignment: Text.AlignVCenter
+  }
+
+  component PoseAxisEditor: RowLayout {
+    id: axisEditor
+
+    property string axisLabel: ""
+    property double modelValue: 0.0
+    property int labelWidth: axisLabel.length > 1 ? 34 : 18
+    signal valueCommitted(string fieldText)
+
+    Layout.fillWidth: true
+    spacing: 6
+
+    Label {
+      text: axisEditor.axisLabel
+      font.pixelSize: 12
+      color: "#555"
+      Layout.preferredWidth: axisEditor.labelWidth
+      Layout.alignment: Qt.AlignVCenter
+      verticalAlignment: Text.AlignVCenter
+    }
+
+    PoseField {
+      Layout.fillWidth: true
+      Layout.preferredWidth: 88
+      modelValue: axisEditor.modelValue
+      onEditingFinished: axisEditor.valueCommitted(text)
+    }
   }
 
   FileDialog {
@@ -394,42 +461,41 @@ Rectangle {
             visible: optionsCard.expanded
             anchors {
               top: optionsHeaderRow.bottom; left: parent.left; right: parent.right
-              topMargin: 6; leftMargin: 8; rightMargin: 8
+              topMargin: 8; leftMargin: 8; rightMargin: 8
             }
-            spacing: 4
+            spacing: 6
 
             // Identity fields
             GridLayout {
-              columns: 2; columnSpacing: 8; rowSpacing: 4
+              columns: 2
               Layout.fillWidth: true
+              rowSpacing: 7
+              columnSpacing: 10
 
-              Label { text: "Model name";  font.pixelSize: 12; color: "#555" }
-              TextField {
+              FormRowLabel { text: "Model name" }
+              CompactFormField {
                 text: importOptions.instanceName
-                font.pixelSize: 12; Layout.fillWidth: true
                 onEditingFinished: importOptions.instanceName = text
               }
 
-              Label {
-                text: "Namespace"; font.pixelSize: 12; color: "#555"
+              FormRowLabel {
+                text: "Namespace"
                 visible: backend.hasXacroNamespaceArg
               }
-              TextField {
+              CompactFormField {
                 visible: backend.hasXacroNamespaceArg
                 text: backend.xacroNamespace
-                font.pixelSize: 12; Layout.fillWidth: true
                 onEditingFinished: backend.xacroNamespace = text
               }
 
-              Label {
-                text: "Frame prefix"; font.pixelSize: 12; color: "#555"
+              FormRowLabel {
+                text: "Frame prefix"
                 visible: backend.hasXacroPrefixArg
               }
-              TextField {
+              CompactFormField {
                 visible: backend.hasXacroPrefixArg
                 text: backend.xacroPrefix
                 placeholderText: "(none)"
-                font.pixelSize: 12; Layout.fillWidth: true
                 onEditingFinished: backend.xacroPrefix = text
               }
             }
@@ -442,7 +508,7 @@ Rectangle {
               Label {
                 id: poseToggleLabel
                 anchors.verticalCenter: parent.verticalCenter
-                text: (optionsCard.poseExpanded ? "▼" : "▶") + "  Pose (m / rad)"
+                text: (optionsCard.poseExpanded ? "▼" : "▶") + "  Pose"
                 font.pixelSize: 12; color: "#555"
               }
 
@@ -453,53 +519,61 @@ Rectangle {
               }
             }
 
-            // ---- Position X Y Z ----
-            RowLayout {
+            ColumnLayout {
               visible: optionsCard.poseExpanded
-              Layout.fillWidth: true; spacing: 4
+              Layout.fillWidth: true
+              spacing: 6
 
-              Label { text: "X"; font.pixelSize: 12; color: "#555"; Layout.preferredWidth: 16 }
-              PoseField {
-                Layout.fillWidth: true
-                modelValue: importOptions.poseX
-                onEditingFinished: importOptions.poseX = parseFloat(text)
+              FormSubheader {
+                text: "Position (m)"
               }
-              Label { text: "Y"; font.pixelSize: 12; color: "#555"; Layout.preferredWidth: 16 }
-              PoseField {
-                Layout.fillWidth: true
-                modelValue: importOptions.poseY
-                onEditingFinished: importOptions.poseY = parseFloat(text)
-              }
-              Label { text: "Z"; font.pixelSize: 12; color: "#555"; Layout.preferredWidth: 16 }
-              PoseField {
-                Layout.fillWidth: true
-                modelValue: importOptions.poseZ
-                onEditingFinished: importOptions.poseZ = parseFloat(text)
-              }
-            }
 
-            // ---- Orientation Roll Pitch Yaw ----
-            RowLayout {
-              visible: optionsCard.poseExpanded
-              Layout.fillWidth: true; spacing: 4
+              RowLayout {
+                Layout.fillWidth: true
+                spacing: 10
 
-              Label { text: "R"; font.pixelSize: 12; color: "#555"; Layout.preferredWidth: 16 }
-              PoseField {
-                Layout.fillWidth: true
-                modelValue: importOptions.poseRoll
-                onEditingFinished: importOptions.poseRoll = parseFloat(text)
+                PoseAxisEditor {
+                  axisLabel: "X"
+                  modelValue: importOptions.poseX
+                  onValueCommitted: importOptions.poseX = parseFloat(fieldText)
+                }
+                PoseAxisEditor {
+                  axisLabel: "Y"
+                  modelValue: importOptions.poseY
+                  onValueCommitted: importOptions.poseY = parseFloat(fieldText)
+                }
+                PoseAxisEditor {
+                  axisLabel: "Z"
+                  modelValue: importOptions.poseZ
+                  onValueCommitted: importOptions.poseZ = parseFloat(fieldText)
+                }
               }
-              Label { text: "P"; font.pixelSize: 12; color: "#555"; Layout.preferredWidth: 16 }
-              PoseField {
-                Layout.fillWidth: true
-                modelValue: importOptions.posePitch
-                onEditingFinished: importOptions.posePitch = parseFloat(text)
+
+              FormSubheader {
+                text: "Orientation (rad)"
+                Layout.topMargin: 2
               }
-              Label { text: "Y"; font.pixelSize: 12; color: "#555"; Layout.preferredWidth: 16 }
-              PoseField {
+
+              RowLayout {
                 Layout.fillWidth: true
-                modelValue: importOptions.poseYaw
-                onEditingFinished: importOptions.poseYaw = parseFloat(text)
+                spacing: 10
+
+                PoseAxisEditor {
+                  axisLabel: "Roll"
+                  modelValue: importOptions.poseRoll
+                  onValueCommitted: importOptions.poseRoll = parseFloat(fieldText)
+                }
+                PoseAxisEditor {
+                  axisLabel: "Pitch"
+                  modelValue: importOptions.posePitch
+                  labelWidth: 36
+                  onValueCommitted: importOptions.posePitch = parseFloat(fieldText)
+                }
+                PoseAxisEditor {
+                  axisLabel: "Yaw"
+                  modelValue: importOptions.poseYaw
+                  onValueCommitted: importOptions.poseYaw = parseFloat(fieldText)
+                }
               }
             }
 
