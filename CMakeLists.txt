@@ -130,6 +130,20 @@ install(DIRECTORY test/worlds/
   FILES_MATCHING PATTERN "*.sdf"
 )
 
+# Resolve gz_ros2_control's lib dir for the env-hook.
+find_package(gz_ros2_control QUIET)
+if(gz_ros2_control_FOUND AND DEFINED gz_ros2_control_DIR)
+  # gz_ros2_control_DIR is <prefix>/share/gz_ros2_control/cmake — walk up 3 levels.
+  get_filename_component(_gz_ctrl_d1     "${gz_ros2_control_DIR}" DIRECTORY)
+  get_filename_component(_gz_ctrl_d2     "${_gz_ctrl_d1}"         DIRECTORY)
+  get_filename_component(_gz_ctrl_prefix "${_gz_ctrl_d2}"         DIRECTORY)
+  set(GZ_ROS2_CONTROL_LIB "${_gz_ctrl_prefix}/lib")
+  message(STATUS "gz_ros2_control lib dir for env-hook: ${GZ_ROS2_CONTROL_LIB}")
+else()
+  set(GZ_ROS2_CONTROL_LIB "")
+  message(STATUS "gz_ros2_control not found; GZ_SIM_SYSTEM_PLUGIN_PATH not set via env-hook")
+endif()
+
 ament_environment_hooks(
   "${CMAKE_CURRENT_SOURCE_DIR}/env-hooks/gz_model_importer_plugin.sh.in"
 )

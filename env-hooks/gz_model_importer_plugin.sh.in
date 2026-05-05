@@ -14,5 +14,21 @@ if [ -n "$_rig_prefix" ]; then
       fi
       ;;
   esac
+  # Expose gz_ros2_control's system plugin so Gazebo finds
+  # libgz_ros2_control-system.so regardless of how it is launched.
+  _rig_gz_ros2_ctrl_lib="@GZ_ROS2_CONTROL_LIB@"
+  if [ -n "$_rig_gz_ros2_ctrl_lib" ] && [ -d "$_rig_gz_ros2_ctrl_lib" ]; then
+    case ":${GZ_SIM_SYSTEM_PLUGIN_PATH:-}:" in
+      *":$_rig_gz_ros2_ctrl_lib:"*) ;;
+      *)
+        if [ -z "${GZ_SIM_SYSTEM_PLUGIN_PATH:-}" ]; then
+          export GZ_SIM_SYSTEM_PLUGIN_PATH="$_rig_gz_ros2_ctrl_lib"
+        else
+          export GZ_SIM_SYSTEM_PLUGIN_PATH="$_rig_gz_ros2_ctrl_lib:$GZ_SIM_SYSTEM_PLUGIN_PATH"
+        fi
+        ;;
+    esac
+  fi
+  unset _rig_gz_ros2_ctrl_lib
 fi
 unset _rig_prefix
