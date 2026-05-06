@@ -580,7 +580,6 @@ void ImporterBackend::onSpawnComplete(const QString &name)
   emit lastErrorChanged(); emit lastWarningChanged(); emit preflightReportChanged();
   clearRuntimeHint();
   setState(ImporterState::Done);
-  maybeLaunchRobotStatePublisher();
 }
 
 void ImporterBackend::onSpawnFailed(const QString &error)
@@ -591,6 +590,8 @@ void ImporterBackend::onSpawnFailed(const QString &error)
     return;
   }
   gzerr << "[gz_model_importer_gui] Spawn failed: " << error.toStdString() << "\n";
+  // Stop any RSP that was pre-launched for this spawn attempt.
+  stopRobotStatePublisherProcesses();
   setError(error);
   setState(ImporterState::SpawnFailed);
 }
@@ -772,6 +773,10 @@ void ImporterBackend::doFinalSpawn()
       importOptions_->poseX(), importOptions_->poseY(), importOptions_->poseZ(),
       importOptions_->poseRoll(), importOptions_->posePitch(), importOptions_->poseYaw()
   };
+
+  // Launch RSP before spawnEntity so gz_ros2_control can find robot_description
+  // during Configure(), which is called synchronously while Gazebo processes the spawn.
+  maybeLaunchRobotStatePublisher();
 
   gzmsg << "[gz_model_importer_gui] Final spawn: entity='"
         << importOptions_->instanceName().toStdString()
