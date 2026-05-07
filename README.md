@@ -11,7 +11,7 @@ This package is part of the **Gazebo ROS 2 Model Runtime Suite**:
 - [GZ Bridge Manager](https://github.com/asoriano1/gz_ros2_bridge_manager) (`gz_ros2_bridge_manager`) — discovers active sensor topics and launches ROS 2 bridges.
 - [ROS2 Control Manager](https://github.com/asoriano1/gz_ros2_control_manager) (`gz_ros2_control_manager`) — discovers controller managers and provides a UI to load, configure, and activate controllers.
 
-This repository provides the **Model Importer** step.
+This repository provides the **Model Importer** module.
 
 ```mermaid
 flowchart LR
