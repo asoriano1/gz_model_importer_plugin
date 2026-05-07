@@ -10,22 +10,25 @@ This package is part of the **Gazebo ROS 2 Model Runtime Suite**:
    Imports a model into Gazebo, supports preview, final spawn, and optional `robot_state_publisher` for URDF / XACRO.
 2. **[Bridge Manager](https://github.com/asoriano1/gz_ros2_bridge_manager)** (`gz_ros2_bridge_manager`)
    Discovers active Gazebo sensor topics and launches the required ROS 2 bridges.
-3. **[Control Manager](https://github.com/asoriano1/gz_ros2_control_manager)** (`gz_ros2_control_manager`, in development)
+3. **[Control Manager](https://github.com/asoriano1/gz_ros2_control_manager)** (`gz_ros2_control_manager`)
    Discovers `controller_manager` instances, hardware interfaces, and controllers, and provides a UI to load, configure, and activate existing controllers.
 
 This repository provides the **Model Importer** step.
 
 ```mermaid
 flowchart LR
-  A[URDF / XACRO / SDF] --> B[Model Importer<br/>preview + spawn + optional robot_state_publisher]
+  A[URDF / XACRO / SDF] --> B["`**Model Importer**
+(preview · spawn · robot_state_publisher)`"]
   B --> C[Gazebo world]
-  C --> D[Bridge Manager<br/>discover sensors/topics + run ros_gz_bridge]
-  C --> E[Control Manager<br/>in development]
-  D --> F[ROS 2 applications<br/>RViz / Nav2 / MoveIt / custom nodes]
+  C --> D["`**Bridge Manager**
+(sensor topics · ros_gz_bridge)`"]
+  C --> E["`**Control Manager**
+(load · configure · activate controllers)`"]
+  D --> F[ROS 2 applications<br/>RViz · Nav2 · MoveIt · custom nodes]
   E --> F
 
-  classDef suite fill:#0057a8,stroke:#004494,color:#ffffff
-  classDef external fill:#f0f0f0,stroke:#999999,color:#555555,stroke-dasharray:5 5
+  classDef suite fill:#dbeafe,stroke:#93c5fd,color:#1e3a5f
+  classDef external fill:#f3f4f6,stroke:#d1d5db,color:#6b7280,stroke-dasharray:5 5
 
   class B,D,E suite
   class A,C,F external
