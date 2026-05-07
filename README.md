@@ -6,12 +6,10 @@ Gazebo Harmonic GUI plugin for ROS 2 Jazzy that imports URDF, XACRO, and SDF mod
 
 This package is part of the **Gazebo ROS 2 Model Runtime Suite**:
 
-1. **[Model Importer](https://github.com/asoriano1/gz_model_importer_plugin)** (`gz_model_importer_plugin`)
-   Imports a model into Gazebo, supports preview, final spawn, and optional `robot_state_publisher` for URDF / XACRO.
-2. **[Bridge Manager](https://github.com/asoriano1/gz_ros2_bridge_manager)** (`gz_ros2_bridge_manager`)
-   Discovers active Gazebo sensor topics and launches the required ROS 2 bridges.
-3. **[Control Manager](https://github.com/asoriano1/gz_ros2_control_manager)** (`gz_ros2_control_manager`)
-   Discovers `controller_manager` instances, hardware interfaces, and controllers, and provides a UI to load, configure, and activate existing controllers.
+- **[Model Importer](https://github.com/asoriano1/gz_model_importer_plugin)** (`gz_model_importer_plugin`)
+  Imports a model into Gazebo, supports preview, final spawn, and optional `robot_state_publisher` for URDF / XACRO.
+- [GZ Bridge Manager](https://github.com/asoriano1/gz_ros2_bridge_manager) (`gz_ros2_bridge_manager`) — discovers active sensor topics and launches ROS 2 bridges.
+- [ROS2 Control Manager](https://github.com/asoriano1/gz_ros2_control_manager) (`gz_ros2_control_manager`) — discovers controller managers and provides a UI to load, configure, and activate controllers.
 
 This repository provides the **Model Importer** step.
 
@@ -20,9 +18,9 @@ flowchart LR
   A[URDF / XACRO / SDF] --> B["`**Model Importer**
 (preview · spawn · robot_state_publisher)`"]
   B --> C[Gazebo world]
-  C --> D["`**Bridge Manager**
+  C --> D["`**GZ Bridge Manager**
 (sensor topics · ros_gz_bridge)`"]
-  C --> E["`**Control Manager**
+  C --> E["`**ROS2 Control Manager**
 (load · configure · activate controllers)`"]
   D --> F[ROS 2 applications<br/>RViz · Nav2 · MoveIt · custom nodes]
   E --> F
