@@ -1,6 +1,6 @@
 <?xml version="1.0" ?>
 <!--
-  Lightweight alternative world for gz_model_importer_plugin.
+  Lightweight alternative world for gz_model_importer.
 
   Goals:
     - Provide the core Gazebo systems required by the importer.

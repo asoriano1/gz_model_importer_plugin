@@ -1,9 +1,9 @@
-#ifndef GZ_MODEL_IMPORTER_GUI_SDF_PREFLIGHT_CHECKER_HH_
-#define GZ_MODEL_IMPORTER_GUI_SDF_PREFLIGHT_CHECKER_HH_
+#ifndef GZ_MODEL_IMPORTER_SDF_PREFLIGHT_CHECKER_HH_
+#define GZ_MODEL_IMPORTER_SDF_PREFLIGHT_CHECKER_HH_
 
 #include <QStringList>
 
-namespace gz_model_importer_gui
+namespace gz_model_importer
 {
 
 /// Results of a preflight scan of the post-rewrite SDF.
@@ -36,6 +36,6 @@ struct SdfPreflightChecker
                                    const QStringList &_unresolvedFromRewrite);
 };
 
-}  // namespace gz_model_importer_gui
+}  // namespace gz_model_importer
 
 #endif

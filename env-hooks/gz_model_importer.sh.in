@@ -1,5 +1,5 @@
 # Prepend install/lib to GZ_GUI_PLUGIN_PATH so gz sim discovers
-# libRobotImporterGui.so at runtime.
+# libGzModelImporter.so at runtime.
 # Prefer COLCON_CURRENT_PREFIX: ROS 2 setup.bash leaves AMENT_CURRENT_PREFIX
 # set globally to /opt/ros/jazzy and must not be used as a fallback here.
 _rig_prefix="${COLCON_CURRENT_PREFIX:-${AMENT_CURRENT_PREFIX:-}}"

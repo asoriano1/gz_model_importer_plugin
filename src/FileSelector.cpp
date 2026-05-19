@@ -1,9 +1,9 @@
-#include "gz_model_importer_gui/FileSelector.hh"
+#include "gz_model_importer/FileSelector.hh"
 
 #include <QFileInfo>
 #include <QUrl>
 
-namespace gz_model_importer_gui
+namespace gz_model_importer
 {
 
 FileSelector::FileSelector(QObject *_parent) : QObject(_parent) {}
@@ -70,4 +70,4 @@ void FileSelector::reset()
   emit lastErrorChanged();
 }
 
-}  // namespace gz_model_importer_gui
+}  // namespace gz_model_importer

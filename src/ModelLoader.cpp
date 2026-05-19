@@ -1,10 +1,10 @@
-#include "gz_model_importer_gui/ModelLoader.hh"
+#include "gz_model_importer/ModelLoader.hh"
 
-#include "gz_model_importer_gui/XacroExpander.hh"
-#include "gz_model_importer_gui/UrdfToSdf.hh"
-#include "gz_model_importer_gui/FileLoader.hh"
+#include "gz_model_importer/XacroExpander.hh"
+#include "gz_model_importer/UrdfToSdf.hh"
+#include "gz_model_importer/FileLoader.hh"
 
-namespace gz_model_importer_gui
+namespace gz_model_importer
 {
 
 ModelLoader::ModelLoader(QObject *_parent)
@@ -107,4 +107,4 @@ void ModelLoader::onExpandFailed(const QString &errorSummary,
   emit loadFailed(errorSummary);
 }
 
-}  // namespace gz_model_importer_gui
+}  // namespace gz_model_importer

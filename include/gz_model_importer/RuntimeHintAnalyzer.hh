@@ -1,10 +1,10 @@
-#ifndef GZ_MODEL_IMPORTER_GUI_RUNTIME_HINT_ANALYZER_HH_
-#define GZ_MODEL_IMPORTER_GUI_RUNTIME_HINT_ANALYZER_HH_
+#ifndef GZ_MODEL_IMPORTER_RUNTIME_HINT_ANALYZER_HH_
+#define GZ_MODEL_IMPORTER_RUNTIME_HINT_ANALYZER_HH_
 
 #include <QString>
 #include <QStringList>
 
-namespace gz_model_importer_gui
+namespace gz_model_importer
 {
 
 /// Lightweight result of scanning an SDF for ROS 2 runtime relevance.
@@ -33,6 +33,6 @@ struct RuntimeHintAnalyzer
                               const QString &_originalPath = {});
 };
 
-}  // namespace gz_model_importer_gui
+}  // namespace gz_model_importer
 
 #endif

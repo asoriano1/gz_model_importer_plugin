@@ -1,4 +1,4 @@
-#include "gz_model_importer_gui/ImporterBackend.hh"
+#include "gz_model_importer/ImporterBackend.hh"
 
 #include <ament_index_cpp/get_package_prefix.hpp>
 #include <QCoreApplication>
@@ -16,18 +16,18 @@
 #include <exception>
 #include <gz/common/Console.hh>
 
-#include "gz_model_importer_gui/ImportOptions.hh"
-#include "gz_model_importer_gui/FileSelector.hh"
-#include "gz_model_importer_gui/ModelLoader.hh"
-#include "gz_model_importer_gui/XacroExpander.hh"
-#include "gz_model_importer_gui/PreviewController.hh"
-#include "gz_model_importer_gui/GzSpawnClient.hh"
-#include "gz_model_importer_gui/InstanceRewriter.hh"
-#include "gz_model_importer_gui/RuntimeHintAnalyzer.hh"
-#include "gz_model_importer_gui/SdfUriRewriter.hh"
-#include "gz_model_importer_gui/SdfPreflightChecker.hh"
+#include "gz_model_importer/ImportOptions.hh"
+#include "gz_model_importer/FileSelector.hh"
+#include "gz_model_importer/ModelLoader.hh"
+#include "gz_model_importer/XacroExpander.hh"
+#include "gz_model_importer/PreviewController.hh"
+#include "gz_model_importer/GzSpawnClient.hh"
+#include "gz_model_importer/InstanceRewriter.hh"
+#include "gz_model_importer/RuntimeHintAnalyzer.hh"
+#include "gz_model_importer/SdfUriRewriter.hh"
+#include "gz_model_importer/SdfPreflightChecker.hh"
 
-namespace gz_model_importer_gui
+namespace gz_model_importer
 {
 
 struct ImporterBackend::RobotStatePublisherLaunch
@@ -61,12 +61,12 @@ QString resolveRobotStatePublisherExecutable()
     if (info.exists() && info.isFile() && info.isExecutable())
       return executable;
 
-    gzwarn << "[gz_model_importer_gui] robot_state_publisher executable not found at '"
+    gzwarn << "[gz_model_importer] robot_state_publisher executable not found at '"
            << executable.toStdString() << "'\n";
   }
   catch (const std::exception &e)
   {
-    gzwarn << "[gz_model_importer_gui] Failed to resolve robot_state_publisher package prefix: "
+    gzwarn << "[gz_model_importer] Failed to resolve robot_state_publisher package prefix: "
            << e.what() << "\n";
   }
 
@@ -164,7 +164,7 @@ ImporterBackend::ImporterBackend(QObject *_parent)
     connect(app, &QCoreApplication::aboutToQuit, this,
         [this]()
         {
-          gzmsg << "[gz_model_importer_gui] Qt application shutdown detected; cleaning up robot_state_publisher processes.\n";
+          gzmsg << "[gz_model_importer] Qt application shutdown detected; cleaning up robot_state_publisher processes.\n";
           stopRobotStatePublisherProcesses();
         },
         Qt::DirectConnection);
@@ -253,7 +253,7 @@ PreviewController *ImporterBackend::previewController() const { return previewCo
 // ============================================================
 void ImporterBackend::reset()
 {
-  gzmsg << "[gz_model_importer_gui] reset() called from state: "
+  gzmsg << "[gz_model_importer] reset() called from state: "
         << stateName().toStdString() << "\n";
 
   poseDebounceTimer_->stop();
@@ -319,7 +319,7 @@ void ImporterBackend::requestPreview()
       importOptions_->poseRoll(), importOptions_->posePitch(), importOptions_->poseYaw()
   };
 
-  gzmsg << "[gz_model_importer_gui] Spawning preview '__preview_"
+  gzmsg << "[gz_model_importer] Spawning preview '__preview_"
         << importOptions_->instanceName().toStdString()
         << "' world='" << worldName_.toStdString()
         << "' pose=(" << initialPose.x << "," << initialPose.y
@@ -339,7 +339,7 @@ void ImporterBackend::cancelPreview()
     return;
   if (!previewController_->isPreviewing()) return;
 
-  gzmsg << "[gz_model_importer_gui] Cancelling preview.\n";
+  gzmsg << "[gz_model_importer] Cancelling preview.\n";
   previewController_->cancelPreview();
 }
 
@@ -355,7 +355,7 @@ void ImporterBackend::importRobot()
 
   if (previewController_->isPreviewing())
   {
-    gzmsg << "[gz_model_importer_gui] Confirm preview → removing preview entity.\n";
+    gzmsg << "[gz_model_importer] Confirm preview → removing preview entity.\n";
     setState(ImporterState::Spawning);
     previewController_->confirmPreview();
     return;
@@ -377,7 +377,7 @@ void ImporterBackend::onFileReady(const QString &path, FileFormat format)
   const bool spawnInFlight = (state_ == ImporterState::Previewing);
   if (previewLive || spawnInFlight)
   {
-    gzmsg << "[gz_model_importer_gui] Preview "
+    gzmsg << "[gz_model_importer] Preview "
           << (spawnInFlight ? "in-flight" : "active")
           << " — deferring load of '" << path.toStdString() << "'\n";
     pendingFilePath_   = path;
@@ -392,7 +392,7 @@ void ImporterBackend::onFileReady(const QString &path, FileFormat format)
 
 void ImporterBackend::onFileError(const QString &msg)
 {
-  gzwarn << "[gz_model_importer_gui] File error: " << msg.toStdString() << "\n";
+  gzwarn << "[gz_model_importer] File error: " << msg.toStdString() << "\n";
   setError(msg);
 }
 
@@ -402,7 +402,7 @@ void ImporterBackend::onLoadComplete(const QString &sdfContent,
   if (state_ != ImporterState::Expanding &&
       state_ != ImporterState::Converting)
   {
-    gzwarn << "[gz_model_importer_gui] Stale loadComplete in state "
+    gzwarn << "[gz_model_importer] Stale loadComplete in state "
            << stateName().toStdString() << " — discarded.\n";
     return;
   }
@@ -450,9 +450,9 @@ void ImporterBackend::onLoadComplete(const QString &sdfContent,
     emit preflightReportChanged();
   }
 
-  gzmsg << "[gz_model_importer_gui] SDF loaded (" << rw.sdf.size() << " chars).\n";
+  gzmsg << "[gz_model_importer] SDF loaded (" << rw.sdf.size() << " chars).\n";
   if (!preflightReport_.isEmpty())
-    gzmsg << "[gz_model_importer_gui] Preflight:\n" << preflightReport_.toStdString() << "\n";
+    gzmsg << "[gz_model_importer] Preflight:\n" << preflightReport_.toStdString() << "\n";
 
   // Lightweight ROS 2 hint — scan the full SDF, not the stripped preview.
   {
@@ -489,7 +489,7 @@ void ImporterBackend::onLoadComplete(const QString &sdfContent,
       runtimeHint_ = hintParts.join(QStringLiteral(" "));
       runtimeHintDetails_ = hint.detectedItems.join(QStringLiteral("\n"));
 
-      gzmsg << "[gz_model_importer_gui] Runtime hint: " << hint.summary.toStdString() << "\n";
+      gzmsg << "[gz_model_importer] Runtime hint: " << hint.summary.toStdString() << "\n";
     }
     else
     {
@@ -511,10 +511,10 @@ void ImporterBackend::onLoadFailed(const QString &error)
   if (state_ != ImporterState::Expanding &&
       state_ != ImporterState::Converting)
   {
-    gzwarn << "[gz_model_importer_gui] Stale loadFailed — discarded.\n";
+    gzwarn << "[gz_model_importer] Stale loadFailed — discarded.\n";
     return;
   }
-  gzwarn << "[gz_model_importer_gui] Load failed: " << error.toStdString() << "\n";
+  gzwarn << "[gz_model_importer] Load failed: " << error.toStdString() << "\n";
   const bool wasXacro = (state_ == ImporterState::Expanding);
   setError(error);
   setState(wasXacro ? ImporterState::ExpansionFailed : ImporterState::ConversionFailed);
@@ -524,12 +524,12 @@ void ImporterBackend::onPreviewSpawned(const QString &name)
 {
   if (state_ != ImporterState::Previewing)
   {
-    gzwarn << "[gz_model_importer_gui] Stale preview spawn ack for '"
+    gzwarn << "[gz_model_importer] Stale preview spawn ack for '"
            << name.toStdString() << "'. Removing orphan.\n";
     previewController_->cancelPreview();
     return;
   }
-  gzmsg << "[gz_model_importer_gui] Preview entity alive: " << name.toStdString() << "\n";
+  gzmsg << "[gz_model_importer] Preview entity alive: " << name.toStdString() << "\n";
   setState(ImporterState::Configuring);
 }
 
@@ -537,10 +537,10 @@ void ImporterBackend::onPreviewFailed(const QString &error)
 {
   if (state_ != ImporterState::Previewing)
   {
-    gzwarn << "[gz_model_importer_gui] Stale previewFailed — discarded.\n";
+    gzwarn << "[gz_model_importer] Stale previewFailed — discarded.\n";
     return;
   }
-  gzwarn << "[gz_model_importer_gui] Preview failed: " << error.toStdString() << "\n";
+  gzwarn << "[gz_model_importer] Preview failed: " << error.toStdString() << "\n";
   setError(error);
   setState(ImporterState::PreviewFailed);
 }
@@ -553,13 +553,13 @@ void ImporterBackend::onPreviewCancelled()
     const FileFormat fmt = pendingFileFormat_;
     pendingFilePath_.clear();
     pendingFileFormat_ = FileFormat::Unknown;
-    gzmsg << "[gz_model_importer_gui] Previous preview removed — loading '"
+    gzmsg << "[gz_model_importer] Previous preview removed — loading '"
           << path.toStdString() << "'\n";
     startFileLoad(path, fmt);
     return;
   }
   if (state_ == ImporterState::Idle) return;
-  gzmsg << "[gz_model_importer_gui] Preview cancelled — returning to Ready.\n";
+  gzmsg << "[gz_model_importer] Preview cancelled — returning to Ready.\n";
   setState(ImporterState::Ready);
 }
 
@@ -572,10 +572,10 @@ void ImporterBackend::onSpawnComplete(const QString &name)
 {
   if (state_ != ImporterState::Spawning)
   {
-    gzwarn << "[gz_model_importer_gui] Stale spawnComplete — discarded.\n";
+    gzwarn << "[gz_model_importer] Stale spawnComplete — discarded.\n";
     return;
   }
-  gzmsg << "[gz_model_importer_gui] Spawn complete: " << name.toStdString() << "\n";
+  gzmsg << "[gz_model_importer] Spawn complete: " << name.toStdString() << "\n";
   lastError_.clear(); lastWarning_.clear(); preflightReport_.clear();
   emit lastErrorChanged(); emit lastWarningChanged(); emit preflightReportChanged();
   clearRuntimeHint();
@@ -586,10 +586,10 @@ void ImporterBackend::onSpawnFailed(const QString &error)
 {
   if (state_ != ImporterState::Spawning)
   {
-    gzwarn << "[gz_model_importer_gui] Stale spawnFailed — discarded.\n";
+    gzwarn << "[gz_model_importer] Stale spawnFailed — discarded.\n";
     return;
   }
-  gzerr << "[gz_model_importer_gui] Spawn failed: " << error.toStdString() << "\n";
+  gzerr << "[gz_model_importer] Spawn failed: " << error.toStdString() << "\n";
   // Stop any RSP that was pre-launched for this spawn attempt.
   stopRobotStatePublisherProcesses();
   setError(error);
@@ -609,7 +609,7 @@ bool ImporterBackend::ensureWorldName()
         "Is Gazebo running and the gz-transport network reachable?"));
     return false;
   }
-  gzmsg << "[gz_model_importer_gui] World discovered: " << worldName_.toStdString() << "\n";
+  gzmsg << "[gz_model_importer] World discovered: " << worldName_.toStdString() << "\n";
   emit worldNameChanged();
   return true;
 }
@@ -655,7 +655,7 @@ void ImporterBackend::maybeLaunchRobotStatePublisher()
   {
     const QString msg = QStringLiteral(
         "robot_state_publisher launch skipped: only URDF and XACRO imports are supported.");
-    gzwarn << "[gz_model_importer_gui] " << msg.toStdString() << "\n";
+    gzwarn << "[gz_model_importer] " << msg.toStdString() << "\n";
     setWarning(msg);
     return;
   }
@@ -665,7 +665,7 @@ void ImporterBackend::maybeLaunchRobotStatePublisher()
   {
     const QString msg = QStringLiteral(
         "robot_state_publisher launch skipped: resolved URDF is empty.");
-    gzerr << "[gz_model_importer_gui] " << msg.toStdString() << "\n";
+    gzerr << "[gz_model_importer] " << msg.toStdString() << "\n";
     setWarning(msg);
     return;
   }
@@ -675,13 +675,13 @@ void ImporterBackend::maybeLaunchRobotStatePublisher()
   launch->rosNamespace = normalizeRosNamespace(currentRosNamespace());
   launch->prefix = xacroPrefix_;
   launch->paramsFile = std::make_unique<QTemporaryFile>(
-      QDir::tempPath() + QStringLiteral("/gz_model_importer_gui_rsp_XXXXXX.yaml"));
+      QDir::tempPath() + QStringLiteral("/gz_model_importer_rsp_XXXXXX.yaml"));
 
   if (!launch->paramsFile->open())
   {
     const QString msg = QStringLiteral(
         "robot_state_publisher launch failed: cannot create temporary params file.");
-    gzerr << "[gz_model_importer_gui] " << msg.toStdString() << "\n";
+    gzerr << "[gz_model_importer] " << msg.toStdString() << "\n";
     setWarning(msg);
     return;
   }
@@ -692,7 +692,7 @@ void ImporterBackend::maybeLaunchRobotStatePublisher()
   {
     const QString msg = QStringLiteral(
         "robot_state_publisher launch failed: cannot write params file.");
-    gzerr << "[gz_model_importer_gui] " << msg.toStdString() << "\n";
+    gzerr << "[gz_model_importer] " << msg.toStdString() << "\n";
     setWarning(msg);
     return;
   }
@@ -705,7 +705,7 @@ void ImporterBackend::maybeLaunchRobotStatePublisher()
   {
     const QString msg = QStringLiteral(
         "robot_state_publisher launch failed: could not resolve the robot_state_publisher executable.");
-    gzerr << "[gz_model_importer_gui] " << msg.toStdString() << "\n";
+    gzerr << "[gz_model_importer] " << msg.toStdString() << "\n";
     setWarning(msg);
     return;
   }
@@ -719,7 +719,7 @@ void ImporterBackend::maybeLaunchRobotStatePublisher()
   launch->process->setArguments(args);
   launch->process->setProcessChannelMode(QProcess::SeparateChannels);
 
-  gzmsg << "[gz_model_importer_gui] Launching robot_state_publisher"
+  gzmsg << "[gz_model_importer] Launching robot_state_publisher"
         << " instance='" << launch->instanceName.toStdString() << "'"
         << " namespace='" << launch->rosNamespace.toStdString() << "'"
         << " prefix='" << launch->prefix.toStdString() << "'"
@@ -730,7 +730,7 @@ void ImporterBackend::maybeLaunchRobotStatePublisher()
       [launch]()
       {
         launch->pid = launch->process->processId();
-        gzmsg << "[gz_model_importer_gui] robot_state_publisher started"
+        gzmsg << "[gz_model_importer] robot_state_publisher started"
               << " executable='" << launch->executablePath.toStdString() << "'"
               << " namespace='" << launch->rosNamespace.toStdString() << "'"
               << " pid=" << launch->pid << "\n";
@@ -743,7 +743,7 @@ void ImporterBackend::maybeLaunchRobotStatePublisher()
             "robot_state_publisher failed to start for namespace '%1' (%2).")
             .arg(launch->rosNamespace)
             .arg(static_cast<int>(error));
-        gzerr << "[gz_model_importer_gui] " << msg.toStdString() << "\n";
+        gzerr << "[gz_model_importer] " << msg.toStdString() << "\n";
         setWarning(msg);
       });
 
@@ -752,7 +752,7 @@ void ImporterBackend::maybeLaunchRobotStatePublisher()
           this,
           [this, launch](int exitCode, QProcess::ExitStatus exitStatus)
           {
-            gzmsg << "[gz_model_importer_gui] robot_state_publisher exited"
+            gzmsg << "[gz_model_importer] robot_state_publisher exited"
                   << " namespace='" << launch->rosNamespace.toStdString() << "'"
                   << " exitCode=" << exitCode
                   << " exitStatus=" << static_cast<int>(exitStatus) << "\n";
@@ -778,7 +778,7 @@ void ImporterBackend::doFinalSpawn()
   // during Configure(), which is called synchronously while Gazebo processes the spawn.
   maybeLaunchRobotStatePublisher();
 
-  gzmsg << "[gz_model_importer_gui] Final spawn: entity='"
+  gzmsg << "[gz_model_importer] Final spawn: entity='"
         << importOptions_->instanceName().toStdString()
         << "' world='" << worldName_.toStdString() << "'\n";
 
@@ -851,7 +851,7 @@ void ImporterBackend::startFileLoad(const QString &path, FileFormat format)
     importOptions_->setLaunchRobotStatePublisher(format != FileFormat::Sdf);
   }
 
-  gzmsg << "[gz_model_importer_gui] Loading: " << path.toStdString()
+  gzmsg << "[gz_model_importer] Loading: " << path.toStdString()
         << "  modelDir=" << modelDir_.toStdString() << "\n";
 
   setState(format == FileFormat::Xacro
@@ -911,7 +911,7 @@ void ImporterBackend::startFileLoad(const QString &path, FileFormat format)
 
     if (!discovered.isEmpty())
     {
-      gzmsg << "[gz_model_importer_gui] XACRO args effective:";
+      gzmsg << "[gz_model_importer] XACRO args effective:";
       for (const QString &a : effectiveArgs) gzmsg << " [" << a.toStdString() << "]";
       gzmsg << "\n";
     }
@@ -984,7 +984,7 @@ void ImporterBackend::assignUniqueName(const QString &filePath)
   while (taken.contains(candidate));
 
   importOptions_->setInstanceName(candidate);
-  gzmsg << "[gz_model_importer_gui] Proposed instance name: '"
+  gzmsg << "[gz_model_importer] Proposed instance name: '"
         << candidate.toStdString() << "'\n";
 }
 
@@ -1015,7 +1015,7 @@ void ImporterBackend::stopRobotStatePublisherProcesses()
 {
   if (shuttingDownRobotStatePublishers_)
   {
-    gzmsg << "[gz_model_importer_gui] robot_state_publisher cleanup already in progress.\n";
+    gzmsg << "[gz_model_importer] robot_state_publisher cleanup already in progress.\n";
     return;
   }
   shuttingDownRobotStatePublishers_ = true;
@@ -1028,7 +1028,7 @@ void ImporterBackend::stopRobotStatePublisherProcesses()
     if (!launch || !launch->process)
       continue;
 
-    gzmsg << "[gz_model_importer_gui] robot_state_publisher cleanup requested"
+    gzmsg << "[gz_model_importer] robot_state_publisher cleanup requested"
           << " executable='" << launch->executablePath.toStdString() << "'"
           << " namespace='" << launch->rosNamespace.toStdString() << "'"
           << " pid=" << launch->pid
@@ -1036,35 +1036,35 @@ void ImporterBackend::stopRobotStatePublisherProcesses()
 
     if (launch->process->state() == QProcess::NotRunning)
     {
-      gzmsg << "[gz_model_importer_gui] robot_state_publisher already stopped"
+      gzmsg << "[gz_model_importer] robot_state_publisher already stopped"
             << " pid=" << launch->pid
             << " finalState=" << static_cast<int>(launch->process->state()) << "\n";
       continue;
     }
 
-    gzmsg << "[gz_model_importer_gui] Stopping robot_state_publisher"
+    gzmsg << "[gz_model_importer] Stopping robot_state_publisher"
           << " namespace='" << launch->rosNamespace.toStdString() << "'"
           << " pid=" << launch->pid << " via terminate()\n";
     launch->process->terminate();
     const bool terminatedCleanly = launch->process->waitForFinished(1000);
-    gzmsg << "[gz_model_importer_gui] terminate() result"
+    gzmsg << "[gz_model_importer] terminate() result"
           << " pid=" << launch->pid
           << " finished=" << (terminatedCleanly ? "true" : "false")
           << " state=" << static_cast<int>(launch->process->state()) << "\n";
 
     if (!terminatedCleanly)
     {
-      gzwarn << "[gz_model_importer_gui] robot_state_publisher did not exit after terminate(), killing pid="
+      gzwarn << "[gz_model_importer] robot_state_publisher did not exit after terminate(), killing pid="
              << launch->pid << "\n";
       launch->process->kill();
       const bool killed = launch->process->waitForFinished(1000);
-      gzmsg << "[gz_model_importer_gui] kill() result"
+      gzmsg << "[gz_model_importer] kill() result"
             << " pid=" << launch->pid
             << " finished=" << (killed ? "true" : "false")
             << " state=" << static_cast<int>(launch->process->state()) << "\n";
     }
 
-    gzmsg << "[gz_model_importer_gui] robot_state_publisher cleanup finished"
+    gzmsg << "[gz_model_importer] robot_state_publisher cleanup finished"
           << " pid=" << launch->pid
           << " finalState=" << static_cast<int>(launch->process->state()) << "\n";
   }
@@ -1084,4 +1084,4 @@ void ImporterBackend::removeRobotStatePublisherLaunch(void *processKey)
   rspLaunches_.erase(it, rspLaunches_.end());
 }
 
-}  // namespace gz_model_importer_gui
+}  // namespace gz_model_importer

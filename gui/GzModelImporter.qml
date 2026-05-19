@@ -8,7 +8,7 @@ import QtQuick.Layouts 1.3
 //   fileSelector   → FileSelector
 //   importOptions  → ImportOptions
 //   previewCtrl    → PreviewController
-//   importerPlugin → RobotImporterGui (for highlightMode)
+//   importerPlugin → GzModelImporter (for highlightMode)
 Rectangle {
   id: root
   color: "transparent"

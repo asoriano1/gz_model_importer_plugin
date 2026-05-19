@@ -1,5 +1,5 @@
-#ifndef GZ_MODEL_IMPORTER_GUI_IMPORTER_BACKEND_HH_
-#define GZ_MODEL_IMPORTER_GUI_IMPORTER_BACKEND_HH_
+#ifndef GZ_MODEL_IMPORTER_IMPORTER_BACKEND_HH_
+#define GZ_MODEL_IMPORTER_IMPORTER_BACKEND_HH_
 
 #include <QMap>
 #include <QObject>
@@ -10,10 +10,10 @@
 #include <string>
 #include <vector>
 
-#include "gz_model_importer_gui/ImporterState.hh"
-#include "gz_model_importer_gui/FileLoader.hh"
+#include "gz_model_importer/ImporterState.hh"
+#include "gz_model_importer/FileLoader.hh"
 
-namespace gz_model_importer_gui
+namespace gz_model_importer
 {
 
 class ImportOptions;
@@ -76,11 +76,11 @@ class ImporterBackend : public QObject
              READ robotStatePublisherSupportText
              NOTIFY robotStatePublisherSupportChanged)
 
-  Q_PROPERTY(gz_model_importer_gui::FileSelector   *fileSelector
+  Q_PROPERTY(gz_model_importer::FileSelector   *fileSelector
              READ fileSelector   CONSTANT)
-  Q_PROPERTY(gz_model_importer_gui::ImportOptions  *importOptions
+  Q_PROPERTY(gz_model_importer::ImportOptions  *importOptions
              READ importOptions  CONSTANT)
-  Q_PROPERTY(gz_model_importer_gui::PreviewController *previewController
+  Q_PROPERTY(gz_model_importer::PreviewController *previewController
              READ previewController CONSTANT)
 
   public: explicit ImporterBackend(QObject *_parent = nullptr);
@@ -134,7 +134,7 @@ class ImporterBackend : public QObject
 
   // ---- Collaborator slots ----
   private slots:
-  void onFileReady(const QString &path, gz_model_importer_gui::FileFormat format);
+  void onFileReady(const QString &path, gz_model_importer::FileFormat format);
   void onFileError(const QString &msg);
   void onLoadComplete(const QString &sdfContent,
                       const QString &resolvedUrdfContent);
@@ -159,7 +159,7 @@ class ImporterBackend : public QObject
   private: std::string applyOptionsToSdf();
   private: void doFinalSpawn();
   private: void startFileLoad(const QString &path,
-                               gz_model_importer_gui::FileFormat format);
+                               gz_model_importer::FileFormat format);
   private: void resetPose();
   private: void assignUniqueName(const QString &filePath);
   private: void clearRuntimeHint();
@@ -224,6 +224,6 @@ class ImporterBackend : public QObject
   private: std::unique_ptr<GzSpawnClient>     spawnClient_;
 };
 
-}  // namespace gz_model_importer_gui
+}  // namespace gz_model_importer
 
 #endif

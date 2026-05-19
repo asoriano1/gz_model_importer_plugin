@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(gz_model_importer_plugin CXX)
+project(gz_model_importer CXX)
 
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
@@ -32,10 +32,10 @@ find_package(Qt5 REQUIRED COMPONENTS Core Concurrent Quick QuickControls2)
 
 # ===================================================================
 # Plugin target
-# Convention: class RobotImporterGui  →  libRobotImporterGui.so
-#             QML resource at         :/RobotImporterGui/RobotImporterGui.qml
+# Convention: class GzModelImporter  →  libGzModelImporter.so
+#             QML resource at         :/GzModelImporter/GzModelImporter.qml
 # ===================================================================
-set(PLUGIN_NAME RobotImporterGui)
+set(PLUGIN_NAME GzModelImporter)
 
 set(PLUGIN_SOURCES
   src/ImporterPlugin.cpp
@@ -56,20 +56,20 @@ set(PLUGIN_SOURCES
 
 # Headers that carry Q_OBJECT must be listed for AUTOMOC with CMP0100 NEW.
 set(PLUGIN_MOC_HEADERS
-  include/gz_model_importer_gui/ImporterPlugin.hh
-  include/gz_model_importer_gui/ImporterBackend.hh
-  include/gz_model_importer_gui/ImportOptions.hh
-  include/gz_model_importer_gui/FileSelector.hh
-  include/gz_model_importer_gui/XacroExpander.hh
-  include/gz_model_importer_gui/ModelLoader.hh
-  include/gz_model_importer_gui/PreviewController.hh
-  include/gz_model_importer_gui/GzSpawnClient.hh
+  include/gz_model_importer/ImporterPlugin.hh
+  include/gz_model_importer/ImporterBackend.hh
+  include/gz_model_importer/ImportOptions.hh
+  include/gz_model_importer/FileSelector.hh
+  include/gz_model_importer/XacroExpander.hh
+  include/gz_model_importer/ModelLoader.hh
+  include/gz_model_importer/PreviewController.hh
+  include/gz_model_importer/GzSpawnClient.hh
 )
 
 # Name MUST match the .qrc filename (without extension) to get a unique
 # qInitResources_<name>() symbol. "resources.qrc" collides with gz-gui8's
-# own symbol; "RobotImporterGui.qrc" produces a unique mangled name.
-qt5_add_resources(PLUGIN_RCC RobotImporterGui.qrc)
+# own symbol; "GzModelImporter.qrc" produces a unique mangled name.
+qt5_add_resources(PLUGIN_RCC GzModelImporter.qrc)
 
 add_library(${PLUGIN_NAME} SHARED
   ${PLUGIN_SOURCES}
@@ -145,7 +145,7 @@ else()
 endif()
 
 ament_environment_hooks(
-  "${CMAKE_CURRENT_SOURCE_DIR}/env-hooks/gz_model_importer_plugin.sh.in"
+  "${CMAKE_CURRENT_SOURCE_DIR}/env-hooks/gz_model_importer.sh.in"
 )
 
 ament_package()

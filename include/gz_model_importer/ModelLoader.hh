@@ -1,14 +1,14 @@
-#ifndef GZ_MODEL_IMPORTER_GUI_MODEL_LOADER_HH_
-#define GZ_MODEL_IMPORTER_GUI_MODEL_LOADER_HH_
+#ifndef GZ_MODEL_IMPORTER_MODEL_LOADER_HH_
+#define GZ_MODEL_IMPORTER_MODEL_LOADER_HH_
 
 #include <QObject>
 #include <QString>
 #include <QStringList>
 #include <memory>
 
-#include "gz_model_importer_gui/FileLoader.hh"
+#include "gz_model_importer/FileLoader.hh"
 
-namespace gz_model_importer_gui
+namespace gz_model_importer
 {
 
 class XacroExpander;
@@ -59,6 +59,6 @@ class ModelLoader : public QObject
   private: std::unique_ptr<XacroExpander> expander_;
 };
 
-}  // namespace gz_model_importer_gui
+}  // namespace gz_model_importer
 
 #endif

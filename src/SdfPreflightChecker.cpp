@@ -1,10 +1,10 @@
-#include "gz_model_importer_gui/SdfPreflightChecker.hh"
+#include "gz_model_importer/SdfPreflightChecker.hh"
 
 #include <string>
 
 #include <tinyxml2.h>
 
-namespace gz_model_importer_gui
+namespace gz_model_importer
 {
 
 namespace
@@ -104,4 +104,4 @@ PreflightFindings SdfPreflightChecker::analyze(const QString &_sdf,
   return findings;
 }
 
-}  // namespace gz_model_importer_gui
+}  // namespace gz_model_importer

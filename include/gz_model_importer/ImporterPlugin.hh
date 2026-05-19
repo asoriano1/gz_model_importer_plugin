@@ -1,5 +1,5 @@
-#ifndef GZ_MODEL_IMPORTER_GUI_IMPORTER_PLUGIN_HH_
-#define GZ_MODEL_IMPORTER_GUI_IMPORTER_PLUGIN_HH_
+#ifndef GZ_MODEL_IMPORTER_IMPORTER_PLUGIN_HH_
+#define GZ_MODEL_IMPORTER_IMPORTER_PLUGIN_HH_
 
 #include <atomic>
 #include <memory>
@@ -12,7 +12,7 @@
 #include <gz/math/Pose3.hh>
 #include <gz/math/Vector3.hh>
 
-namespace gz_model_importer_gui
+namespace gz_model_importer
 {
 
 class ImporterBackend;
@@ -20,9 +20,9 @@ class ImporterBackend;
 /// Gazebo GUI plugin entry point.
 ///
 /// Naming contract (gz/gui/Plugin.hh):
-///   class RobotImporterGui  →  libRobotImporterGui.so
-///   QML resource at         :/RobotImporterGui/RobotImporterGui.qml
-///   gui.config   → <plugin filename="RobotImporterGui" name="Robot Importer">
+///   class GzModelImporter  →  libGzModelImporter.so
+///   QML resource at         :/GzModelImporter/GzModelImporter.qml
+///   gui.config   → <plugin filename="GzModelImporter" name="Robot Importer">
 ///
 /// Camera lifecycle:
 ///   On previewSpawned  → saves camera world pose then focuses on preview entity.
@@ -35,7 +35,7 @@ class ImporterBackend;
 ///   The mode is applied via gz::rendering::Visual::SetTransparency /
 ///   SetWireframe on the render thread. This works for all visual types
 ///   including mesh-embedded materials (unlike SDF <material> alpha edits).
-class RobotImporterGui : public gz::gui::Plugin
+class GzModelImporter : public gz::gui::Plugin
 {
   Q_OBJECT
 
@@ -43,8 +43,8 @@ class RobotImporterGui : public gz::gui::Plugin
   Q_PROPERTY(int highlightMode READ highlightMode
              WRITE setHighlightMode NOTIFY highlightModeChanged)
 
-  public: RobotImporterGui();
-  public: ~RobotImporterGui() override;
+  public: GzModelImporter();
+  public: ~GzModelImporter() override;
 
   public: void LoadConfig(const tinyxml2::XMLElement *_pluginElem) override;
 
@@ -96,6 +96,6 @@ class RobotImporterGui : public gz::gui::Plugin
   std::atomic<bool> selectionPending_{false};
 };
 
-}  // namespace gz_model_importer_gui
+}  // namespace gz_model_importer
 
 #endif

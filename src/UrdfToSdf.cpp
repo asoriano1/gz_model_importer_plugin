@@ -1,10 +1,10 @@
-#include "gz_model_importer_gui/UrdfToSdf.hh"
+#include "gz_model_importer/UrdfToSdf.hh"
 
 #include <QStringList>
 #include <sdf/sdf.hh>
 #include <sdf/parser.hh>
 
-namespace gz_model_importer_gui
+namespace gz_model_importer
 {
 
 std::string UrdfToSdf::convert(const std::string &_urdfOrSdfXml,
@@ -36,4 +36,4 @@ std::string UrdfToSdf::convert(const std::string &_urdfOrSdfXml,
   return sdfDoc->Root()->ToString("");
 }
 
-}  // namespace gz_model_importer_gui
+}  // namespace gz_model_importer

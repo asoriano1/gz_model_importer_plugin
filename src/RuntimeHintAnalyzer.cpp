@@ -1,4 +1,4 @@
-#include "gz_model_importer_gui/RuntimeHintAnalyzer.hh"
+#include "gz_model_importer/RuntimeHintAnalyzer.hh"
 
 #include <ament_index_cpp/get_package_prefix.hpp>
 #include <functional>
@@ -11,7 +11,7 @@
 
 #include <tinyxml2.h>
 
-namespace gz_model_importer_gui
+namespace gz_model_importer
 {
 
 namespace
@@ -526,4 +526,4 @@ RuntimeHint RuntimeHintAnalyzer::analyze(const QString &_sdfXml,
   return hint;
 }
 
-}  // namespace gz_model_importer_gui
+}  // namespace gz_model_importer

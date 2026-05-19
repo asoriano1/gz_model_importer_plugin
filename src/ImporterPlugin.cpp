@@ -1,4 +1,4 @@
-#include "gz_model_importer_gui/ImporterPlugin.hh"
+#include "gz_model_importer/ImporterPlugin.hh"
 
 #include <cmath>
 #include <string>
@@ -26,24 +26,24 @@
 #include <gz/rendering/Visual.hh>
 #include <gz/common/Console.hh>
 
-#include "gz_model_importer_gui/ImporterBackend.hh"
-#include "gz_model_importer_gui/ImportOptions.hh"
-#include "gz_model_importer_gui/FileSelector.hh"
-#include "gz_model_importer_gui/PreviewController.hh"
+#include "gz_model_importer/ImporterBackend.hh"
+#include "gz_model_importer/ImportOptions.hh"
+#include "gz_model_importer/FileSelector.hh"
+#include "gz_model_importer/PreviewController.hh"
 
 // Q_INIT_RESOURCE cannot be called inside a namespace (Qt restriction).
 static void initRobotImporterResources()
 {
-  Q_INIT_RESOURCE(RobotImporterGui);
+  Q_INIT_RESOURCE(GzModelImporter);
 }
 
-namespace gz_model_importer_gui
+namespace gz_model_importer
 {
 
 // Forward declaration — defined before onRender().
 static void applyHighlight(gz::rendering::VisualPtr vis, int mode);
 
-RobotImporterGui::RobotImporterGui()
+GzModelImporter::GzModelImporter()
 : gz::gui::Plugin(),
   backend_(std::make_unique<ImporterBackend>())
 {
@@ -69,16 +69,16 @@ RobotImporterGui::RobotImporterGui()
     rootCtx->setContextProperty(QStringLiteral("importerPlugin"), this);
   }
 
-  qRegisterMetaType<gz_model_importer_gui::FileFormat>(
-      "gz_model_importer_gui::FileFormat");
+  qRegisterMetaType<gz_model_importer::FileFormat>(
+      "gz_model_importer::FileFormat");
 
   auto *ctrl = backend_->previewController();
 
   connect(ctrl, &PreviewController::previewSpawned,
-          this, &RobotImporterGui::onPreviewSpawned);
+          this, &GzModelImporter::onPreviewSpawned);
 
   connect(ctrl, &PreviewController::previewCancelled,
-          this, &RobotImporterGui::onPreviewDone);
+          this, &GzModelImporter::onPreviewDone);
 
   connect(backend_.get(), &ImporterBackend::stateChanged,
           this, [this]()
@@ -90,18 +90,18 @@ RobotImporterGui::RobotImporterGui()
   gz::gui::App()->installEventFilter(this);
 }
 
-RobotImporterGui::~RobotImporterGui()
+GzModelImporter::~GzModelImporter()
 {
   gz::gui::App()->removeEventFilter(this);
   delete previewBadge_;
 }
 
-void RobotImporterGui::LoadConfig(const tinyxml2::XMLElement *_pluginElem)
+void GzModelImporter::LoadConfig(const tinyxml2::XMLElement *_pluginElem)
 {
   (void)_pluginElem;
 
   if (this->title.empty())
-    this->title = "Robot Importer";
+    this->title = "Model Importer";
 
   QTimer::singleShot(500, this, [this]() { createPreviewBadge(); });
 }
@@ -109,12 +109,12 @@ void RobotImporterGui::LoadConfig(const tinyxml2::XMLElement *_pluginElem)
 // ============================================================
 // Highlight mode property
 // ============================================================
-int RobotImporterGui::highlightMode() const
+int GzModelImporter::highlightMode() const
 {
   return highlightMode_.load(std::memory_order_relaxed);
 }
 
-void RobotImporterGui::setHighlightMode(int _mode)
+void GzModelImporter::setHighlightMode(int _mode)
 {
   if (highlightMode_.exchange(_mode, std::memory_order_release) == _mode)
     return;
@@ -127,7 +127,7 @@ void RobotImporterGui::setHighlightMode(int _mode)
 // ============================================================
 // Camera lifecycle slots (main thread)
 // ============================================================
-void RobotImporterGui::onPreviewSpawned(const QString &_entityName)
+void GzModelImporter::onPreviewSpawned(const QString &_entityName)
 {
   const auto *opts = backend_->importOptions();
   {
@@ -145,7 +145,7 @@ void RobotImporterGui::onPreviewSpawned(const QString &_entityName)
   cameraState_.store(1, std::memory_order_release);
 }
 
-void RobotImporterGui::onPreviewDone()
+void GzModelImporter::onPreviewDone()
 {
   previewAlive_.store(false, std::memory_order_release);
   highlightPending_.store(false, std::memory_order_release);
@@ -166,7 +166,7 @@ void RobotImporterGui::onPreviewDone()
 // ============================================================
 // eventFilter — called on the render thread for Render events
 // ============================================================
-bool RobotImporterGui::eventFilter(QObject *_obj, QEvent *_event)
+bool GzModelImporter::eventFilter(QObject *_obj, QEvent *_event)
 {
   if (_event->type() == gz::gui::events::Render::kType)
     this->onRender();
@@ -258,7 +258,7 @@ static void applyHighlight(gz::rendering::VisualPtr vis, int mode)
 // ============================================================
 // onRender — camera + highlight operations, runs on the render thread
 // ============================================================
-void RobotImporterGui::onRender()
+void GzModelImporter::onRender()
 {
   const int camState = cameraState_.load(std::memory_order_acquire);
   const bool needHighlight = highlightPending_.load(std::memory_order_acquire);
@@ -291,7 +291,7 @@ void RobotImporterGui::onRender()
           const int mode = highlightMode_.load(std::memory_order_relaxed);
           applyHighlight(visual, mode);
           highlightPending_.store(false, std::memory_order_release);
-          gzmsg << "[gz_model_importer_gui] Highlight mode " << mode
+          gzmsg << "[gz_model_importer] Highlight mode " << mode
                 << " applied to '" << entityName << "'.\n";
         }
 
@@ -334,12 +334,12 @@ void RobotImporterGui::onRender()
 
             if (id == 0)
             {
-              gzwarn << "[gz_model_importer_gui] Could not resolve entity ID for '"
+              gzwarn << "[gz_model_importer] Could not resolve entity ID for '"
                      << entityName << "' — selection skipped.\n";
               return;
             }
 
-            gzmsg << "[gz_model_importer_gui] Selecting entity " << id
+            gzmsg << "[gz_model_importer] Selecting entity " << id
                   << " ('" << entityName << "').\n";
 
             QMetaObject::invokeMethod(gz::gui::App(), [id]()
@@ -399,7 +399,7 @@ void RobotImporterGui::onRender()
     cam->SetWorldPose(
         gz::math::Pose3d(eye, gz::math::Quaterniond(0.0, pitch, yaw)));
 
-    gzmsg << "[gz_model_importer_gui] Camera saved and focused on preview ("
+    gzmsg << "[gz_model_importer] Camera saved and focused on preview ("
           << target.X() << ", " << target.Y() << ", " << target.Z() << ").\n";
 
     cameraState_.store(0, std::memory_order_release);
@@ -407,7 +407,7 @@ void RobotImporterGui::onRender()
   else if (camState == 2)  // NeedRestore
   {
     cam->SetWorldPose(savedCamPose_);
-    gzmsg << "[gz_model_importer_gui] Camera pose restored.\n";
+    gzmsg << "[gz_model_importer] Camera pose restored.\n";
     cameraState_.store(0, std::memory_order_release);
   }
 }
@@ -415,12 +415,12 @@ void RobotImporterGui::onRender()
 // ============================================================
 // createPreviewBadge
 // ============================================================
-void RobotImporterGui::createPreviewBadge()
+void GzModelImporter::createPreviewBadge()
 {
   auto *engine = gz::gui::App()->Engine();
   if (!engine || engine->rootObjects().isEmpty())
   {
-    gzwarn << "[gz_model_importer_gui] createPreviewBadge: "
+    gzwarn << "[gz_model_importer] createPreviewBadge: "
               "QML engine has no root objects yet — badge skipped.\n";
     return;
   }
@@ -428,7 +428,7 @@ void RobotImporterGui::createPreviewBadge()
   auto *rootWin = qobject_cast<QQuickWindow *>(engine->rootObjects().first());
   if (!rootWin)
   {
-    gzwarn << "[gz_model_importer_gui] createPreviewBadge: "
+    gzwarn << "[gz_model_importer] createPreviewBadge: "
               "root object is not a QQuickWindow — badge skipped.\n";
     return;
   }
@@ -462,7 +462,7 @@ Rectangle {
   component.setData(QByteArray(kBadgeQml), QUrl(QStringLiteral("qrc:/__preview_badge__")));
   if (component.isError())
   {
-    gzwarn << "[gz_model_importer_gui] Preview badge QML error: "
+    gzwarn << "[gz_model_importer] Preview badge QML error: "
            << component.errorString().toStdString() << "\n";
     return;
   }
@@ -471,17 +471,17 @@ Rectangle {
       component.create(engine->rootContext()));
   if (!item)
   {
-    gzwarn << "[gz_model_importer_gui] Preview badge: failed to instantiate item.\n";
+    gzwarn << "[gz_model_importer] Preview badge: failed to instantiate item.\n";
     return;
   }
 
   item->setParentItem(rootWin->contentItem());
   previewBadge_ = item;
 
-  gzmsg << "[gz_model_importer_gui] Preview badge overlay installed in main window.\n";
+  gzmsg << "[gz_model_importer] Preview badge overlay installed in main window.\n";
 }
 
-}  // namespace gz_model_importer_gui
+}  // namespace gz_model_importer
 
-GZ_ADD_PLUGIN(gz_model_importer_gui::RobotImporterGui,
+GZ_ADD_PLUGIN(gz_model_importer::GzModelImporter,
               gz::gui::Plugin)

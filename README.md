@@ -1,4 +1,4 @@
-# gz_model_importer_plugin
+# gz_model_importer
 
 Gazebo Harmonic GUI plugin for ROS 2 Jazzy that imports URDF, XACRO, and SDF models into a running Gazebo world.
 
@@ -6,7 +6,7 @@ Gazebo Harmonic GUI plugin for ROS 2 Jazzy that imports URDF, XACRO, and SDF mod
 
 This package is part of the **Gazebo ROS 2 Model Runtime Suite**:
 
-- **[Model Importer](https://github.com/asoriano1/gz_model_importer_plugin)** (`gz_model_importer_plugin`)
+- **[Model Importer](https://github.com/asoriano1/gz_model_importer)** (`gz_model_importer`)
   Imports a model into Gazebo, supports preview, final spawn, and optional `robot_state_publisher` for URDF / XACRO.
 - [GZ Bridge Manager](https://github.com/asoriano1/gz_ros2_bridge_manager) (`gz_ros2_bridge_manager`) — discovers active sensor topics and launches ROS 2 bridges.
 - [ROS2 Control Manager](https://github.com/asoriano1/gz_ros2_control_manager) (`gz_ros2_control_manager`) — discovers controller managers and provides a UI to load, configure, and activate controllers.
@@ -56,7 +56,7 @@ flowchart LR
 ```bash
 cd <workspace>
 source /opt/ros/jazzy/setup.bash
-colcon build --symlink-install --packages-select gz_model_importer_plugin
+colcon build --symlink-install --packages-select gz_model_importer
 source install/setup.bash
 ```
 
@@ -65,13 +65,13 @@ source install/setup.bash
 Start Gazebo through the package launch file:
 
 ```bash
-ros2 launch gz_model_importer_plugin gazebo_importer.launch.py
+ros2 launch gz_model_importer gazebo_importer.launch.py
 ```
 
 To open a specific world:
 
 ```bash
-ros2 launch gz_model_importer_plugin gazebo_importer.launch.py \
+ros2 launch gz_model_importer gazebo_importer.launch.py \
   world:=/absolute/path/to/world.sdf
 ```
 
@@ -79,7 +79,7 @@ If `world` is omitted, the packaged demo world `robotnik_world.sdf` is used.
 
 This launch flow:
 
-- opens Gazebo with the Robot Importer panel already loaded
+- opens Gazebo with the Model Importer panel already loaded
 - prepares `GZ_GUI_PLUGIN_PATH`
 - prepares `GZ_SIM_SYSTEM_PLUGIN_PATH` for `gz_ros2_control` when it is installed
 - starts a `/clock` bridge if `ros_gz_bridge` is available
@@ -98,8 +98,8 @@ If you want to start Gazebo directly, the package installs a ready-to-use GUI co
 
 ```bash
 gz sim \
-  $(ros2 pkg prefix gz_model_importer_plugin)/share/gz_model_importer_plugin/worlds/robotnik_world.sdf \
-  --gui-config $(ros2 pkg prefix gz_model_importer_plugin)/share/gz_model_importer_plugin/config/gz_model_importer_plugin.config
+  $(ros2 pkg prefix gz_model_importer)/share/gz_model_importer/worlds/robotnik_world.sdf \
+  --gui-config $(ros2 pkg prefix gz_model_importer)/share/gz_model_importer/config/gz_model_importer.config
 ```
 
 ## Import Workflow

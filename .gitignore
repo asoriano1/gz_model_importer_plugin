@@ -4,3 +4,12 @@ install/
 log/
 *.so
 *.a
+
+# Editor / IDE noise
+*.swp
+*.swo
+.vscode/
+.idea/
+.clangd/
+__pycache__/
+*.pyc

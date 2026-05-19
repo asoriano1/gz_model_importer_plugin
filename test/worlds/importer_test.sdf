@@ -1,6 +1,6 @@
 <?xml version="1.0" ?>
 <!--
-  Test world for gz_model_importer_gui — Gazebo Harmonic (gz-sim 8)
+  Test world for gz_model_importer — Gazebo Harmonic (gz-sim 8)
 
   Includes all sensor system plugins needed to test imported models:
     - Physics, UserCommands, SceneBroadcaster  (always required)

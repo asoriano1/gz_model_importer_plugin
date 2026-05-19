@@ -1,10 +1,10 @@
-#ifndef GZ_MODEL_IMPORTER_GUI_SDF_URI_REWRITER_HH_
-#define GZ_MODEL_IMPORTER_GUI_SDF_URI_REWRITER_HH_
+#ifndef GZ_MODEL_IMPORTER_SDF_URI_REWRITER_HH_
+#define GZ_MODEL_IMPORTER_SDF_URI_REWRITER_HH_
 
 #include <QString>
 #include <QStringList>
 
-namespace gz_model_importer_gui
+namespace gz_model_importer
 {
 
 /// Results from a rewrite pass.
@@ -43,6 +43,6 @@ struct SdfUriRewriter
                                const QString &_modelsRoot);
 };
 
-}  // namespace gz_model_importer_gui
+}  // namespace gz_model_importer
 
 #endif

@@ -1,5 +1,5 @@
-#ifndef GZ_MODEL_IMPORTER_GUI_GZ_SPAWN_CLIENT_HH_
-#define GZ_MODEL_IMPORTER_GUI_GZ_SPAWN_CLIENT_HH_
+#ifndef GZ_MODEL_IMPORTER_GZ_SPAWN_CLIENT_HH_
+#define GZ_MODEL_IMPORTER_GZ_SPAWN_CLIENT_HH_
 
 #include <QObject>
 #include <QSet>
@@ -9,7 +9,7 @@
 
 namespace gz { namespace msgs { class Boolean; } }
 
-namespace gz_model_importer_gui
+namespace gz_model_importer
 {
 
 /// Optional pose override for spawnEntity().
@@ -111,6 +111,6 @@ class GzSpawnClient : public QObject
   private: std::unique_ptr<Impl> impl_;
 };
 
-}  // namespace gz_model_importer_gui
+}  // namespace gz_model_importer
 
 #endif

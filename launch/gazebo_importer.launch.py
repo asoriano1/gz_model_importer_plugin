@@ -14,7 +14,7 @@ from launch.actions import (
 from launch.substitutions import EnvironmentVariable, LaunchConfiguration
 
 
-PACKAGE_NAME = "gz_model_importer_plugin"
+PACKAGE_NAME = "gz_model_importer"
 
 
 def _as_bool(value: str) -> bool:
@@ -26,7 +26,7 @@ def _launch_setup(context, *args, **kwargs):
     importer_share_dir = os.path.join(importer_prefix, "share", PACKAGE_NAME)
     importer_lib_dir = os.path.join(importer_prefix, "lib")
     gui_config_path = os.path.join(
-        importer_share_dir, "config", "gz_model_importer_plugin.config"
+        importer_share_dir, "config", "gz_model_importer.config"
     )
     default_world_path = os.path.join(
         importer_share_dir, "worlds", "robotnik_world.sdf"
@@ -39,7 +39,7 @@ def _launch_setup(context, *args, **kwargs):
     render_engine = LaunchConfiguration("render_engine").perform(context).strip()
 
     actions = [
-        LogInfo(msg=f"Robot Importer lib dir: {importer_lib_dir}"),
+        LogInfo(msg=f"Model Importer lib dir: {importer_lib_dir}"),
         LogInfo(msg=f"GUI config path: {gui_config_path}"),
         SetEnvironmentVariable(
             name="GZ_GUI_PLUGIN_PATH",
@@ -175,7 +175,7 @@ def generate_launch_description():
                 "gui",
                 default_value="true",
                 description=(
-                    "Launch the Gazebo GUI and load the Robot Importer panel. "
+                    "Launch the Gazebo GUI and load the Model Importer panel. "
                     "Set to false to run server-only mode."
                 ),
             ),

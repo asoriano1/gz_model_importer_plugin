@@ -1,10 +1,10 @@
-#include "gz_model_importer_gui/FileLoader.hh"
+#include "gz_model_importer/FileLoader.hh"
 
 #include <QFile>
 #include <QFileInfo>
 #include <QTextStream>
 
-namespace gz_model_importer_gui
+namespace gz_model_importer
 {
 
 FileFormat FileLoader::detect(const QString &_path)
@@ -59,4 +59,4 @@ std::string FileLoader::readContent(const QString &_path, QString &_errorOut)
   return content.toStdString();
 }
 
-}  // namespace gz_model_importer_gui
+}  // namespace gz_model_importer
