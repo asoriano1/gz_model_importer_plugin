@@ -6,7 +6,7 @@ Gazebo Harmonic GUI plugin for ROS 2 Jazzy that imports URDF, XACRO, and SDF mod
 
 This package is part of the **Gazebo ROS 2 Model Runtime Suite**:
 
-- **[Model Importer](https://github.com/asoriano1/gz_model_importer)** (`gz_model_importer`)
+- **[Model Importer](https://github.com/asoriano1/gz_model_importer_plugin)** (`gz_model_importer`)
   Imports a model into Gazebo, supports preview, final spawn, and optional `robot_state_publisher` for URDF / XACRO.
 - [GZ Bridge Manager](https://github.com/asoriano1/gz_ros2_bridge_manager) (`gz_ros2_bridge_manager`) — discovers active sensor topics and launches ROS 2 bridges.
 - [ROS2 Control Manager](https://github.com/asoriano1/gz_ros2_control_manager) (`gz_ros2_control_manager`) — discovers controller managers and provides a UI to load, configure, and activate controllers.
